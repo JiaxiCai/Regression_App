@@ -28,11 +28,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --no-compile -r requirements-build.txt
+          python -m pip install -r requirements-build.txt
 
       - name: Build
         run: |
-          pyinstaller --noconfirm --clean --windowed --name RegressionApp main.py
+          pyinstaller --noconfirm --clean --windowed --name RegressionApp --hidden-import regression_app.method_comparison --hidden-import regression_app.clinical_tools --hidden-import regression_app.targetlynx_converter --hidden-import scipy.stats --collect-all scipy --collect-all matplotlib main.py
 
       - name: Zip macOS app
         if: runner.os == 'macOS'
