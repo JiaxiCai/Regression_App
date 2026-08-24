@@ -1,0 +1,61 @@
+name: Build desktop apps
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: RegressionApp-macOS
+          - os: windows-latest
+            artifact: RegressionApp-Windows
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --no-compile -r requirements-build.txt
+
+      - name: Build
+        run: |
+          pyinstaller --noconfirm --clean --windowed --name RegressionApp main.py
+
+      - name: Zip macOS app
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent RegressionApp.app RegressionApp-macOS.zip
+
+      - name: Zip Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/RegressionApp" -DestinationPath "dist/RegressionApp-Windows.zip" -Force
+
+      - name: Upload macOS artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RegressionApp-macOS
+          path: dist/RegressionApp-macOS.zip
+
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RegressionApp-Windows
+          path: dist/RegressionApp-Windows.zip
