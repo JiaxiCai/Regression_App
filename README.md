@@ -1,101 +1,71 @@
-# Regression App v0.2.0
+# Regression App v0.3.2
 
-A cross-platform desktop analysis workbench for analytical and clinical laboratory data.
+A cross-platform PySide6 desktop workbench for analytical and clinical laboratory data.
 
-## Current scope
+## Current modules
 
-### Calibration regression
-- Manual X/Y entry and CSV/Excel import
-- Spreadsheet-style copy/paste
-- Calibrator/QC row typing and row-level inclusion/exclusion
-- Linear, 1/x weighted linear, 1/x² weighted linear
-- Quadratic, 1/x weighted quadratic, 1/x² weighted quadratic
-- Padé [1/1] and [2/1]
+### Regression / calibration
+- Manual spreadsheet-style X/Y entry and CSV/Excel import
+- Calibrator vs QC typing and row-level inclusion/exclusion
+- Linear, 1/x, 1/x², quadratic, weighted quadratic, Padé [1/1], and Padé [2/1]
 - Origin handling: Exclude, Include, Force
 - Back-calculated concentrations, bias, residuals, RMSE, AIC/AICc/BIC
-- Pearson r², residual-based Fit R², and Weighted R² shown separately
-- Contiguous passing calibration range / AMR screen
-- QC back-calculation and replicate summary
+- Signed Pearson r, Pearson r², residual-based Fit R², and Weighted R² reported separately
+- Contiguous passing calibration-range screen and QC summaries
 - Excel export
 
 ### Method comparison
-- Deming regression with user-configurable error-variance ratio λ = σy²/σx²
+- Deming regression with configurable variance ratio λ
 - Passing–Bablok regression
-- Slope/intercept confidence intervals
-- Identity-line comparison plot
-- Descriptive constant- and proportional-bias flags
+- Slope/intercept confidence intervals and comparison plot
 
-### Clinical chemistry quick tools
-- Descriptive statistics, CV%, IQR, Shapiro–Wilk
-- Precision summary and simple within-run / between-run variance components
-- LoB / LoD and LoQ estimation from a concentration–CV profile
-- Quick linearity screen
+### Clinical tools
+- Descriptive statistics and Shapiro–Wilk
+- Precision summaries and simple variance components
+- LoB / LoD / LoQ quick checks
+- Linearity quick screen
 - Nonparametric reference intervals with bootstrap confidence intervals
 - Interference/recovery bias
-- ROC analysis with AUC and Youden-optimal threshold
+- ROC analysis with AUC, Youden-optimal threshold, and ROC plot
 
 ### TargetLynx converter
-- Reads CSV, TargetLynx comma-delimited TXT, tab/semicolon-delimited text, and Excel
-- Auto-detects common Sample / Analyte / Value fields
-- Manual column mapping for variable report layouts
-- Converts long or wide source data to tidy `Sample / Analyte / Value` format
-- Exports one-dimensional data with one analyte per worksheet
-- Exports sample × analyte wide matrices
+- Parses Waters TargetLynx Quantify Compound Summary Reports as repeated compound blocks
+- Compound and sample-type filtering
+- Detects analytes vs isotope-labeled internal standards
+- Multi-select TargetLynx metadata and measurement/result columns
+- Wide, long/tidy, and one-worksheet-per-compound Excel outputs
+
+## v0.3 workspace redesign
+
+The main analytical workspaces use draggable Qt splitters instead of rigid stacked layouts. Regression provides a wide spreadsheet-style data-entry pane with independently resizable model settings. Method Comparison, ROC, and TargetLynx likewise expose resizable input, results, plot, configuration, and preview regions.
+
+The UI architecture cleanup has begun with reusable layout infrastructure in `regression_app/ui_helpers.py`. The large `app.py` source is stored through small generated chunk modules in the repository because the connected GitHub synchronization interface has a per-transfer size limitation; runtime behavior corresponds to the v0.3.2 release source.
 
 ## Running from source
 
-Python 3.11 or 3.12 is recommended.
+Use a standalone Python 3.10–3.14 installation rather than Apple's/Xcode Python.
 
 ```bash
 python -m venv .venv
-```
-
-macOS/Linux:
-
-```bash
-source .venv/bin/activate
+source .venv/bin/activate   # macOS/Linux
 pip install -r requirements.txt
 python main.py
 ```
 
-Windows PowerShell:
-
-```powershell
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python main.py
-```
+On Windows, activate `.venv\Scripts\Activate.ps1` instead.
 
 ## Building standalone apps
 
-Standalone applications should be built separately on each operating system. Collaborators do not need Python after the app is packaged.
+- macOS: `Build Regression App - macOS.command`
+- Windows: `Build Regression App - Windows.bat`
+- GitHub Actions: `.github/workflows/build-desktop.yml`
 
-### macOS
-Install Python 3.10+ (3.12 recommended), then double-click:
-
-`Build Regression App - macOS.command`
-
-The build produces `dist/RegressionApp.app` and a shareable ZIP.
-
-### Windows
-Install Python 3.10+ (3.12 recommended), then double-click:
-
-`Build Regression App - Windows.bat`
-
-The build produces `dist/RegressionApp/RegressionApp.exe` and a shareable ZIP.
-
-GitHub Actions can build both platforms from `.github/workflows/build-desktop.yml`.
-
-## Startup diagnostics
-
-If the standalone app fails during startup, it writes a diagnostic log to `~/RegressionApp_crash.log` and attempts to display the traceback in an error dialog.
+The macOS builder detects Python 3.10–3.14, checks common Homebrew/python.org locations, rejects Apple/Xcode Python, and produces `RegressionApp.app` plus a distributable ZIP.
 
 ## Statistical transparency
 
-The app includes a **How Calculated** view for calibration models and intentionally distinguishes Pearson r², ordinary residual-based Fit R², and Weighted R². A model should not be selected based on R² alone.
+The application deliberately distinguishes Pearson r, Pearson r², ordinary residual-based Fit R², and Weighted R². Calibration models should not be selected from R² alone; back-calculated calibrator bias, QC performance, validated range, and model complexity should also be considered.
 
 ## Validation status
 
-This is research software and has not been validated for clinical use. Current clinical-tool modules are intended for quick checking and are not yet full implementations of every CLSI EP05/EP06/EP17/EP28 decision rule. Results should be verified against independent reference implementations and known datasets before regulated or clinical use.
-
-TargetLynx report layouts can differ by assay and export configuration. Converter field mappings should be checked against representative files from each laboratory workflow.
+This is research software and has not been validated for clinical use. Clinical-tool modules are quick-check implementations and are not complete reproductions of all CLSI EP05/EP06/EP07/EP17/EP28 requirements. Results intended for regulated or clinical use should be verified against independent reference implementations and known datasets.
