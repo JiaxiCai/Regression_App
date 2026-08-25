@@ -81,4 +81,4 @@ def roc_analysis(labels,scores):
     df=pd.DataFrame(rows,columns=["threshold","sensitivity","specificity"]).dropna()
     fpr=1-df["specificity"].to_numpy(); tpr=df["sensitivity"].to_numpy(); o=np.argsort(fpr); auc=np.trapezoid(tpr[o],fpr[o])
     best=df.iloc[int(np.nanargmax((df["sensitivity"]+df["specificity"]-1).to_numpy()))]
-    return {"auc":float(auc),"best":best.to_dict(),"positive_class":pos}
+    return {"auc":float(auc),"best":best.to_dict(),"positive_class":pos,"curve":df.copy()}
