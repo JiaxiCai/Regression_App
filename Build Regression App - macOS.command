@@ -1,98 +1,131 @@
 #!/bin/bash
-set -e
+
+set -u
 cd "$(dirname "$0")"
 
 echo "=========================================="
-echo " Regression App v0.2.0 - macOS Builder"
+echo " Regression App macOS Builder v0.3.2"
 echo "=========================================="
 echo
 
-# Prefer a normal standalone Python installation. Do not use Xcode's bundled Python.
-PYTHON=""
+fail() {
+    echo
+    echo "ERROR: $1"
+    echo
+    read -n 1 -s -r -p "Press any key to close..."
+    exit 1
+}
 
-for candidate in python3.12 python3.11 python3.10; do
-    if command -v "$candidate" >/dev/null 2>&1; then
-        PYTHON="$(command -v "$candidate")"
+is_supported_python() {
+    local P="$1"
+    [ -x "$P" ] || return 1
+    if [[ "$P" == "/usr/bin/python3" ]] || [[ "$P" == *"/Xcode.app/"* ]]; then
+        return 1
+    fi
+    "$P" - <<'PY' >/dev/null 2>&1
+import sys
+major, minor = sys.version_info[:2]
+raise SystemExit(0 if major == 3 and 10 <= minor <= 14 else 1)
+PY
+}
+
+PYTHON=""
+for CANDIDATE in python3.14 python3.13 python3.12 python3.11 python3.10 python3; do
+    FOUND="$(command -v "$CANDIDATE" 2>/dev/null || true)"
+    if [ -n "$FOUND" ] && is_supported_python "$FOUND"; then
+        PYTHON="$FOUND"
         break
     fi
 done
 
-# Fall back to python3 only when it is >= 3.10 and is not Xcode's bundled interpreter.
-if [ -z "$PYTHON" ] && command -v python3 >/dev/null 2>&1; then
-    CANDIDATE="$(command -v python3)"
-    VERSION="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)"
-    MAJOR="$(echo "$VERSION" | cut -d. -f1)"
-    MINOR="$(echo "$VERSION" | cut -d. -f2)"
-
-    if [[ "$CANDIDATE" != *"/Applications/Xcode.app/"* ]] && \
-       [ "${MAJOR:-0}" -ge 3 ] && [ "${MINOR:-0}" -ge 10 ]; then
-        PYTHON="$CANDIDATE"
-    fi
+if [ -z "$PYTHON" ]; then
+    for FOUND in \
+        /opt/homebrew/bin/python3 \
+        /usr/local/bin/python3 \
+        /Library/Frameworks/Python.framework/Versions/3.14/bin/python3 \
+        /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 \
+        /Library/Frameworks/Python.framework/Versions/3.12/bin/python3 \
+        /Library/Frameworks/Python.framework/Versions/3.11/bin/python3 \
+        /Library/Frameworks/Python.framework/Versions/3.10/bin/python3
+    do
+        if is_supported_python "$FOUND"; then
+            PYTHON="$FOUND"
+            break
+        fi
+    done
 fi
 
 if [ -z "$PYTHON" ]; then
-    echo "A suitable Python installation was not found."
+    echo "No supported standalone Python installation was detected."
     echo
-    echo "Regression App requires Python 3.10 or newer to BUILD."
-    echo "Your Mac appears to be using Apple's/Xcode's bundled Python 3.9,"
-    echo "which should not be used for this build."
+    echo "Supported versions: Python 3.10 through 3.14."
+    echo "Apple/Xcode's system Python is intentionally excluded."
     echo
-    echo "Please install Python 3.12 from:"
-    echo "https://www.python.org/downloads/macos/"
+    echo "Diagnostic information:"
+    echo "  python3 --version:"
+    python3 --version 2>&1 || true
     echo
-    echo "After installation, double-click this builder again."
+    echo "  which python3:"
+    which python3 2>&1 || true
     echo
-    read -n 1 -s -r -p "Press any key to close..."
-    exit 1
+    fail "Supported Python installation not found."
 fi
 
 echo "Using Python:"
-"$PYTHON" -c 'import sys; print(sys.executable); print(sys.version)'
+"$PYTHON" --version
+echo "$PYTHON"
 echo
 
-echo "[1/4] Creating isolated build environment..."
-rm -rf .buildenv
-"$PYTHON" -m venv .buildenv
+rm -rf .buildenv build dist RegressionApp.spec
+
+echo "Creating build environment..."
+"$PYTHON" -m venv .buildenv || fail "Could not create virtual environment."
 source .buildenv/bin/activate
 
-echo "[2/4] Installing dependencies..."
-python -m pip install --upgrade pip
-# --no-compile avoids a known pip/PySide6 interaction where template .py files
-# are incorrectly byte-compiled during installation.
-python -m pip install --no-compile -r requirements-build.txt
+echo
+echo "Installing dependencies..."
+python -m pip install --upgrade pip || fail "pip upgrade failed."
+python -m pip install --no-compile -r requirements-build.txt || fail "Dependency installation failed."
 
-echo "[3/4] Building RegressionApp.app..."
-rm -rf build dist RegressionApp.spec
+echo
+echo "Building RegressionApp.app..."
 pyinstaller \
   --noconfirm \
   --clean \
   --windowed \
-  --name "RegressionApp" \
-  --osx-bundle-identifier "org.regressionapp.desktop" \
-  --hidden-import "regression_app.method_comparison" \
-  --hidden-import "regression_app.clinical_tools" \
-  --hidden-import "regression_app.targetlynx_converter" \
-  --hidden-import "scipy.stats" \
-  --collect-all "scipy" \
-  --collect-all "matplotlib" \
-  main.py
+  --name RegressionApp \
+  --hidden-import regression_app.method_comparison \
+  --hidden-import regression_app.clinical_tools \
+  --hidden-import regression_app.targetlynx_converter \
+  --hidden-import regression_app.ui_helpers \
+  --hidden-import scipy.stats \
+  --collect-all scipy \
+  --collect-all matplotlib \
+  main.py || fail "PyInstaller build failed."
 
-echo "[4/4] Creating distributable ZIP..."
-cd dist
+[ -d "dist/RegressionApp.app" ] || fail "dist/RegressionApp.app was not created."
+
 rm -f RegressionApp-macOS.zip
-ditto -c -k --sequesterRsrc --keepParent "RegressionApp.app" "RegressionApp-macOS.zip"
-cd ..
+ditto -c -k --sequesterRsrc --keepParent "dist/RegressionApp.app" "RegressionApp-macOS.zip" \
+  || fail "Could not create output ZIP."
+
+OUTPUT_DIR="$HOME/Desktop/RegressionApp-v0.3.2"
+rm -rf "$OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR"
+cp -R "dist/RegressionApp.app" "$OUTPUT_DIR/"
+cp "RegressionApp-macOS.zip" "$OUTPUT_DIR/"
 
 echo
-echo "SUCCESS"
+echo "=========================================="
+echo " BUILD COMPLETE"
+echo "=========================================="
 echo
-echo "App:"
-echo "$(pwd)/dist/RegressionApp.app"
+echo "Output:"
+echo "$OUTPUT_DIR"
 echo
-echo "Shareable ZIP:"
-echo "$(pwd)/dist/RegressionApp-macOS.zip"
-echo
-echo "Development builds are not yet Apple-signed/notarized."
-echo "On another Mac, Control-click > Open may be required the first time."
+
+open "$OUTPUT_DIR"
+osascript -e 'display dialog "Regression App v0.3.2 finished building. The output folder has been opened on your Desktop." buttons {"OK"} default button "OK"'
 echo
 read -n 1 -s -r -p "Press any key to close..."
+echo
