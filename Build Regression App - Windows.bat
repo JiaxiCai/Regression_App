@@ -3,13 +3,13 @@ setlocal
 cd /d "%~dp0"
 
 echo ==========================================
-echo  Regression App v0.2.0 - Windows Builder
+echo  Regression App v0.3.2 - Windows Builder
 echo ==========================================
 echo.
 
 set PYTHON=
 
-for %%P in (py python3.12 python3.11 python3.10 python) do (
+for %%P in (py python3.14 python3.13 python3.12 python3.11 python3.10 python) do (
     if not defined PYTHON (
         where %%P >nul 2>nul
         if not errorlevel 1 (
@@ -21,7 +21,7 @@ for %%P in (py python3.12 python3.11 python3.10 python) do (
 
 if not defined PYTHON (
     echo Python 3.10 or newer was not found.
-    echo Please install Python 3.12 from:
+    echo Please install a current Python from:
     echo https://www.python.org/downloads/windows/
     echo Select "Add Python to PATH" during installation.
     pause
@@ -46,7 +46,7 @@ if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
 if exist RegressionApp.spec del /q RegressionApp.spec
 
-pyinstaller --noconfirm --clean --windowed --name "RegressionApp" --hidden-import "regression_app.method_comparison" --hidden-import "regression_app.clinical_tools" --hidden-import "regression_app.targetlynx_converter" --hidden-import "scipy.stats" --collect-all "scipy" --collect-all "matplotlib" main.py
+pyinstaller --noconfirm --clean --windowed --name "RegressionApp" --hidden-import "regression_app.method_comparison" --hidden-import "regression_app.clinical_tools" --hidden-import "regression_app.targetlynx_converter" --hidden-import "regression_app.ui_helpers" --hidden-import "scipy.stats" --collect-all "scipy" --collect-all "matplotlib" main.py
 if errorlevel 1 (
     echo Build failed.
     pause
