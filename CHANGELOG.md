@@ -2,6 +2,14 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.3.3] - 2026-08-24
+
+### TargetLynx converter numeric types
+- Numeric-looking TargetLynx result cells are now converted to true numeric values during parsing instead of being exported wholesale as Excel text.
+- Sample names, IDs, sample text, type, acquisition date/time, vial labels, and primary flags remain text even when they contain only digits.
+- Mixed fields preserve vendor annotations such as `<LLOQ` or `No Peak`.
+- Typed values propagate through preview, wide output, long/tidy output, and per-compound Excel export.
+
 ## [0.3.2] - 2026-08-24
 
 ### Regression statistics
