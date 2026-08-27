@@ -1,15 +1,12 @@
-# Generated loader for Regression App v0.4.0.
-# The base GUI source is embedded across small chunk modules for reliable connector sync.
+# Generated loader for Regression App v0.4.4.
+# The release GUI source is embedded across small chunk modules for reliable connector sync.
 import base64 as _b64, zlib as _zlib
 from importlib import import_module as _import_module
+
 _parts = []
-for _i in range(6):
+for _i in range(8):
     _m = _import_module(f".app_chunk_{_i:02d}", __package__)
     _parts.append(_m.CHUNK)
+
 _src = _zlib.decompress(_b64.b64decode("".join(_parts)))
 exec(compile(_src, __file__, "exec"))
-
-# v0.4.0 installs the Replicate Studies workspace as a normal module so it is
-# explicit to PyInstaller and easier to maintain than adding more generated chunks.
-from .replicate_ui_patch import install as _install_replicate_studies
-_install_replicate_studies(MainWindow)
