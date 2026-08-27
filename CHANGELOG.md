@@ -2,6 +2,34 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.4.4] - 2026-08-27
+
+### Regression workflow improvements
+- Added spreadsheet-style Fill Down for Use, Type, X, and Y using Ctrl+D / Cmd+D and a Fill Down button.
+- Calibration plot now supports clicking calibrator points to toggle inclusion/exclusion and immediately refit selected models.
+- Excluded calibrators remain visible and can be restored by clicking again.
+- Model Comparison now includes individual Cal/QC bias drill-down, including excluded-calibrator diagnostics.
+- QC Summary now reports minimum and maximum % bias in addition to mean bias.
+- Preserves the selected model during interactive refits.
+
+### Efficiency
+- Reuses the existing regression engine for interactive refits.
+- Maintains one calibration-plot click callback and disconnects stale callbacks before re-registering.
+- Preserves original input-row indices for direct UI updates.
+- Removed duplicate Pearson-correlation computation.
+
+## [0.4.3] - 2026-08-27
+
+### Replicate Studies UI and IS recovery
+- Reworked Replicate Studies views into full-size peer tabs.
+- Added Levey–Jennings-style IS recovery using TargetLynx IS Area versus injection number.
+- Added mean and ±1/2/3 SD lines plus IS recovery export.
+
+## [0.4.2] - 2026-08-27
+
+### Fixed — Replicate Studies results rendering
+- Fixed mixed text/numeric formatting failure after calibration rotation.
+
 ## [0.4.1] - 2026-08-27
 
 ### Fixed — Replicate Studies mapping table
