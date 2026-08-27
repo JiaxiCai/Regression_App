@@ -1,67 +1,112 @@
 @echo off
-setlocal
+setlocal EnableExtensions
 cd /d "%~dp0"
 
 echo ==========================================
-echo  Regression App v0.3.2 - Windows Builder
+echo  Regression App v0.3.4 - Windows Builder
 echo ==========================================
 echo.
 
-set PYTHON=
+set "PYTHON_CMD="
 
-for %%P in (py python3.14 python3.13 python3.12 python3.11 python3.10 python) do (
-    if not defined PYTHON (
-        where %%P >nul 2>nul
-        if not errorlevel 1 (
-            %%P -c "import sys; raise SystemExit(0 if sys.version_info >= (3,10) else 1)" >nul 2>nul
-            if not errorlevel 1 set PYTHON=%%P
-        )
-    )
-)
+py -3.12 -c "import sys; print(sys.executable)" >nul 2>nul && set "PYTHON_CMD=py -3.12"
+if not defined PYTHON_CMD py -3.13 -c "import sys; print(sys.executable)" >nul 2>nul && set "PYTHON_CMD=py -3.13"
+if not defined PYTHON_CMD py -3.14 -c "import sys; print(sys.executable)" >nul 2>nul && set "PYTHON_CMD=py -3.14"
+if not defined PYTHON_CMD python3.12 -c "import sys" >nul 2>nul && set "PYTHON_CMD=python3.12"
+if not defined PYTHON_CMD python3.13 -c "import sys" >nul 2>nul && set "PYTHON_CMD=python3.13"
+if not defined PYTHON_CMD python3.14 -c "import sys" >nul 2>nul && set "PYTHON_CMD=python3.14"
+if not defined PYTHON_CMD python -c "import sys; raise SystemExit(0 if (3,10) <= sys.version_info[:2] < (3,15) else 1)" >nul 2>nul && set "PYTHON_CMD=python"
 
-if not defined PYTHON (
-    echo Python 3.10 or newer was not found.
-    echo Please install a current Python from:
-    echo https://www.python.org/downloads/windows/
-    echo Select "Add Python to PATH" during installation.
+if not defined PYTHON_CMD (
+    echo ERROR: A supported Python installation was not found.
+    echo Recommended: 64-bit Python 3.12 from python.org.
     pause
     exit /b 1
 )
 
 echo Using Python:
-%PYTHON% -c "import sys; print(sys.executable); print(sys.version)"
+%PYTHON_CMD% -c "import sys, platform; print(sys.executable); print(sys.version); print(platform.architecture())"
 echo.
 
-echo [1/4] Creating isolated build environment...
+echo [1/7] Creating isolated build environment...
 if exist .buildenv rmdir /s /q .buildenv
-%PYTHON% -m venv .buildenv
+%PYTHON_CMD% -m venv .buildenv
+if errorlevel 1 goto :build_fail
 call .buildenv\Scripts\activate.bat
 
-echo [2/4] Installing dependencies...
+echo [2/7] Installing dependencies...
 python -m pip install --upgrade pip
+if errorlevel 1 goto :build_fail
 python -m pip install --no-compile -r requirements-build.txt
+if errorlevel 1 goto :build_fail
+python -m PyInstaller --version
 
-echo [3/4] Building RegressionApp.exe...
+echo [3/7] Building normal folder application...
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
 if exist RegressionApp.spec del /q RegressionApp.spec
+if exist RegressionApp-Portable.spec del /q RegressionApp-Portable.spec
 
-pyinstaller --noconfirm --clean --windowed --name "RegressionApp" --hidden-import "regression_app.method_comparison" --hidden-import "regression_app.clinical_tools" --hidden-import "regression_app.targetlynx_converter" --hidden-import "regression_app.ui_helpers" --hidden-import "scipy.stats" --collect-all "scipy" --collect-all "matplotlib" main.py
-if errorlevel 1 (
-    echo Build failed.
-    pause
-    exit /b 1
+python -m PyInstaller --noconfirm --clean --windowed --onedir --name "RegressionApp" --hidden-import "regression_app.method_comparison" --hidden-import "regression_app.clinical_tools" --hidden-import "regression_app.targetlynx_converter" --hidden-import "regression_app.ui_helpers" --hidden-import "scipy.stats" --collect-all "scipy" --collect-all "matplotlib" main.py
+if errorlevel 1 goto :build_fail
+
+echo [4/7] Verifying folder bundle...
+if not exist "dist\RegressionApp\RegressionApp.exe" goto :build_fail
+set "PYDLL="
+for /r "dist\RegressionApp" %%F in (python*.dll) do (
+    if not defined PYDLL set "PYDLL=%%F"
 )
+if not defined PYDLL (
+    echo ERROR: The bundled Python DLL is missing.
+    goto :build_fail
+)
+echo Found bundled Python DLL:
+echo %PYDLL%
+"dist\RegressionApp\RegressionApp.exe" --self-test
+if errorlevel 1 (
+    echo ERROR: Folder bundle self-test failed.
+    echo Check %%USERPROFILE%%\RegressionApp_crash.log.
+    goto :build_fail
+)
+echo Folder bundle self-test passed.
 
-echo [4/4] Creating distributable ZIP...
+echo [5/7] Building single-file portable application...
+python -m PyInstaller --noconfirm --clean --windowed --onefile --name "RegressionApp-Portable" --hidden-import "regression_app.method_comparison" --hidden-import "regression_app.clinical_tools" --hidden-import "regression_app.targetlynx_converter" --hidden-import "regression_app.ui_helpers" --hidden-import "scipy.stats" --collect-all "scipy" --collect-all "matplotlib" main.py
+if errorlevel 1 goto :build_fail
+if not exist "dist\RegressionApp-Portable.exe" goto :build_fail
+
+echo [6/7] Creating distributable ZIP and instructions...
+> "dist\README-WINDOWS.txt" (
+    echo Regression App v0.3.4 - Windows
+    echo.
+    echo EASIEST OPTION:
+    echo   Run RegressionApp-Portable.exe.
+    echo.
+    echo FOLDER OPTION:
+    echo   Extract RegressionApp-Windows.zip completely first.
+    echo   Then open RegressionApp\RegressionApp.exe.
+    echo.
+    echo IMPORTANT:
+    echo   Do NOT run RegressionApp.exe from inside the ZIP.
+    echo   Do NOT copy RegressionApp.exe by itself. The folder build depends on
+    echo   the adjacent _internal directory, including the bundled Python DLL.
+)
 powershell -NoProfile -Command "Compress-Archive -Path 'dist\RegressionApp' -DestinationPath 'dist\RegressionApp-Windows.zip' -Force"
+if errorlevel 1 goto :build_fail
 
+echo [7/7] Finished.
 echo.
 echo SUCCESS
-echo Folder app:
-echo %cd%\dist\RegressionApp\RegressionApp.exe
-echo.
-echo Shareable ZIP:
-echo %cd%\dist\RegressionApp-Windows.zip
-echo.
+echo Recommended file to share:
+echo   %cd%\dist\RegressionApp-Portable.exe
+echo Alternative:
+echo   %cd%\dist\RegressionApp-Windows.zip
+explorer "%cd%\dist"
 pause
+exit /b 0
+
+:build_fail
+echo.
+echo BUILD / PACKAGE VALIDATION FAILED
+pause
+exit /b 1
