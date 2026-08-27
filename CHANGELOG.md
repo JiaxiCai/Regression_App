@@ -2,6 +2,13 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.4.1] - 2026-08-27
+
+### Fixed — Replicate Studies mapping table
+- Fixed a mapping/readback failure that could surface as `Row 1 has an invalid Replicate Set.`.
+- Improved replicate-set validation to distinguish missing mapping cells from invalid numeric values.
+- Updated the Replicate Studies window version to v0.4.1.
+
 ## [0.4.0] - 2026-08-26
 
 ### Replicate Studies prototype
