@@ -1,4 +1,4 @@
-# Regression App v0.3.2
+# Regression App v0.3.4
 
 A cross-platform PySide6 desktop workbench for analytical and clinical laboratory data.
 
@@ -69,3 +69,8 @@ The application deliberately distinguishes Pearson r, Pearson r², ordinary resi
 ## Validation status
 
 This is research software and has not been validated for clinical use. Clinical-tool modules are quick-check implementations and are not complete reproductions of all CLSI EP05/EP06/EP07/EP17/EP28 requirements. Results intended for regulated or clinical use should be verified against independent reference implementations and known datasets.
+
+
+## Windows distribution note
+
+The Windows builder creates both `RegressionApp-Portable.exe` and `RegressionApp-Windows.zip`. The portable EXE is the simplest file to share. For the ZIP version, extract the entire `RegressionApp` folder before launching `RegressionApp.exe`; the executable depends on runtime files in its adjacent `_internal` directory.
