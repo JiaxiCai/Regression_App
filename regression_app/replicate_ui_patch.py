@@ -45,7 +45,7 @@ def install(MainWindow):
         self.repstudy_rows = None
         self.repstudy_results = None
         self.repstudy_path = None
-        self.setWindowTitle("Regression App v0.4.0")
+        self.setWindowTitle("Regression App v0.4.1")
         _build_tab(self)
     MainWindow.__init__ = wrapped_init
 
@@ -250,10 +250,16 @@ def _mapped_rows(w):
     set_ids = []
     for r in range(w.rs_mapping_table.rowCount()):
         item = w.rs_mapping_table.item(r, 4)
+        if item is None or not item.text().strip():
+            raise ValueError(
+                f"Row {r+1} is missing a Replicate Set. Reload the analyte mapping."
+            )
         try:
-            set_id = int(float(item.text()))
+            set_id = int(float(item.text().strip()))
         except Exception:
-            raise ValueError(f"Row {r+1} has an invalid Replicate Set.")
+            raise ValueError(
+                f"Row {r+1} has an invalid Replicate Set value: {item.text()!r}."
+            )
         if set_id < 1:
             raise ValueError("Replicate Set values must be positive integers.")
         set_ids.append(set_id)
