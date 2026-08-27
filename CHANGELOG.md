@@ -2,6 +2,14 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.4.8] - 2026-08-27
+
+### Replicate Studies — incomplete ladder handling
+- Calibration rotation now uses the largest calibration-level range shared by all replicate sets instead of requiring every set to contain every nominal level observed anywhere in the study.
+- This fixes Doxycycline in the milk 5×5 dataset, where blank/No Peak responses at several low calibrators caused only 2 of 6 sets to be treated as complete.
+- Doxycycline now rotates all 6 sets over the common Cal 3–10 range.
+- The common range must still contain at least the configured minimum number of calibrators, preserving a fair like-for-like comparison across replicate sets.
+
 ## [0.4.7] - 2026-08-27
 
 ### Calibration plot diagnostics
