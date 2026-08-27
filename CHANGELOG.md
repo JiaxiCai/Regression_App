@@ -2,6 +2,13 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.3.5] - 2026-08-26
+
+### Fixed — GitHub/Windows chunk packaging
+- Windows PyInstaller builds now use `--collect-submodules regression_app` so dynamically loaded `app_chunk_00`…`app_chunk_05` modules are included.
+- Bundle self-test now imports `regression_app.app`, catching missing GUI chunks before a build is declared successful.
+- The portable one-file EXE is also self-tested before distribution.
+
 ## [0.3.3] - 2026-08-24
 
 ### TargetLynx converter numeric types
