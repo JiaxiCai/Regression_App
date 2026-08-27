@@ -1,4 +1,4 @@
-# Regression App v0.3.4
+# Regression App v0.3.5
 
 A cross-platform PySide6 desktop workbench for analytical and clinical laboratory data.
 
@@ -74,3 +74,8 @@ This is research software and has not been validated for clinical use. Clinical-
 ## Windows distribution note
 
 The Windows builder creates both `RegressionApp-Portable.exe` and `RegressionApp-Windows.zip`. The portable EXE is the simplest file to share. For the ZIP version, extract the entire `RegressionApp` folder before launching `RegressionApp.exe`; the executable depends on runtime files in its adjacent `_internal` directory.
+
+
+### v0.3.5 Windows build note
+
+GitHub-sourced builds explicitly collect all `regression_app` submodules so the generated `app_chunk_XX` modules used by the repository loader are packaged by PyInstaller. Both folder and portable builds import the GUI module during self-test before the builder reports success.
