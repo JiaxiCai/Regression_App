@@ -3,7 +3,7 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 echo ==========================================
-echo  Regression App v0.4.6 - Windows Builder
+echo  Regression App v0.4.7 - Windows Builder
 echo ==========================================
 echo.
 
@@ -53,7 +53,7 @@ if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
 if exist RegressionApp.spec del /q RegressionApp.spec
 
-python -m PyInstaller --noconfirm --windowed --onedir --name "RegressionApp" --paths "%CD%" --collect-submodules "regression_app" --hidden-import "regression_app.app" --hidden-import "regression_app.weighting_ui_patch" --hidden-import "scipy.stats" main.py
+python -m PyInstaller --noconfirm --windowed --onedir --name "RegressionApp" --paths "%CD%" --collect-submodules "regression_app" --hidden-import "regression_app.app" --hidden-import "regression_app.weighting_ui_patch" --hidden-import "regression_app.calibration_plot_patch" --hidden-import "scipy.stats" main.py
 if errorlevel 1 goto :build_fail
 
 echo [3/5] Validating packaged application...
@@ -73,7 +73,7 @@ if errorlevel 1 (
 
 echo [4/5] Creating collaborator-ready ZIP...
 > "dist\README-WINDOWS.txt" (
-    echo Regression App v0.4.6 - Windows
+    echo Regression App v0.4.7 - Windows
     echo.
     echo 1. Extract RegressionApp-Windows.zip completely.
     echo 2. Open the extracted RegressionApp folder.
