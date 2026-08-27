@@ -16,7 +16,7 @@ def _write_crash_log(exc_text):
         return None
 
 def _bundle_self_test():
-    """Import core packaged dependencies and exit; used by build scripts."""
+    """Import all packaged dependencies, including the GUI module."""
     import numpy
     import pandas
     import scipy
@@ -24,6 +24,7 @@ def _bundle_self_test():
     import openpyxl
     import PySide6
     from regression_app import models, method_comparison, clinical_tools, targetlynx_converter
+    import regression_app.app
     return 0
 
 if "--self-test" in sys.argv:
