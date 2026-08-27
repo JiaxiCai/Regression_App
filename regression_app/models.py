@@ -76,7 +76,7 @@ def _stats(x, y, yhat, p, w):
     rmse = float(np.sqrt(np.mean(resid ** 2)))
     fit_r2 = _fit_r2(y, yhat)
     pearson_r = _pearson_r(x, y)
-    pearson_r2 = _pearson_r2(x, y)
+    pearson_r2 = float(pearson_r * pearson_r) if np.isfinite(pearson_r) else np.nan
     weighted_r2 = _weighted_r2(y, yhat, w)
 
     adj_r2 = np.nan
