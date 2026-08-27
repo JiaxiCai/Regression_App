@@ -2,6 +2,16 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.3.6] - 2026-08-26
+
+### Build efficiency
+- Windows now produces one validated `--onedir` build instead of both `--onedir` and `--onefile`.
+- Local Windows and macOS builders reuse `.buildenv` instead of recreating the environment on every run.
+- Removed repeated pip upgrades on reused environments.
+- Removed broad `--collect-all scipy` and `--collect-all matplotlib` flags.
+- GitHub Actions now publishes the collaborator-ready Windows ZIP only.
+- The packaged GUI self-test remains enabled and `--collect-submodules regression_app` is retained while the chunk loader is still in use.
+
 ## [0.3.5] - 2026-08-26
 
 ### Fixed — GitHub/Windows chunk packaging
