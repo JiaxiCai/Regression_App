@@ -2,6 +2,14 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.4.7] - 2026-08-27
+
+### Calibration plot diagnostics
+- Displays the fitted numerical equation directly on the Calibration plot.
+- Displays Fit R² on the plot for all models.
+- Weighted models also display Weighted R².
+- Plot annotations update automatically after each interactive calibrator inclusion/exclusion and refit.
+
 ## [0.4.6] - 2026-08-27
 
 ### Fixed — packaged app startup
