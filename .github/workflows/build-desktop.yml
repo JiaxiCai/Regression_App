@@ -3,10 +3,8 @@ name: Build desktop apps
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-    tags:
-      - "v*"
+    branches: [main]
+    tags: ["v*"]
 
 jobs:
   build:
@@ -33,27 +31,16 @@ jobs:
             requirements-build.txt
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements-build.txt
+        run: python -m pip install -r requirements-build.txt
 
       - name: Build folder application
-        run: |
-          python -m PyInstaller --noconfirm --clean --windowed --onedir --name RegressionApp --collect-submodules regression_app --hidden-import scipy.stats --collect-all scipy --collect-all matplotlib main.py
+        run: python -m PyInstaller --noconfirm --windowed --onedir --name RegressionApp --collect-submodules regression_app --hidden-import scipy.stats main.py
 
-      - name: Self-test folder application on Windows
+      - name: Self-test Windows application
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           & "dist/RegressionApp/RegressionApp.exe" --self-test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Build portable Windows EXE
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          python -m PyInstaller --noconfirm --clean --windowed --onefile --name RegressionApp-Portable --collect-submodules regression_app --hidden-import scipy.stats --collect-all scipy --collect-all matplotlib main.py
-          & "dist/RegressionApp-Portable.exe" --self-test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Zip macOS app
@@ -62,24 +49,16 @@ jobs:
           cd dist
           ditto -c -k --sequesterRsrc --keepParent RegressionApp.app RegressionApp-macOS.zip
 
-      - name: Zip Windows folder app
+      - name: Zip Windows app
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           @"
-          Regression App for Windows
-
-          Recommended:
-            Run RegressionApp-Portable.exe directly.
-
-          Folder build:
-            Extract RegressionApp-Windows.zip completely, then run
-            RegressionApp\RegressionApp.exe.
-
-          Do not run RegressionApp.exe from inside the ZIP and do not copy the
-          folder-build EXE away from its _internal directory.
+          Regression App v0.3.6 - Windows
+          Extract RegressionApp-Windows.zip completely, then run RegressionApp\RegressionApp.exe.
+          No Python installation is required.
+          Do not run the EXE from inside the ZIP or copy it away from _internal.
           "@ | Set-Content -Path "dist/README-WINDOWS.txt"
-
           Compress-Archive -Path "dist/RegressionApp" -DestinationPath "dist/RegressionApp-Windows.zip" -Force
 
       - name: Upload macOS artifact
@@ -96,7 +75,6 @@ jobs:
         with:
           name: RegressionApp-Windows
           path: |
-            dist/RegressionApp-Portable.exe
             dist/RegressionApp-Windows.zip
             dist/README-WINDOWS.txt
           if-no-files-found: error
