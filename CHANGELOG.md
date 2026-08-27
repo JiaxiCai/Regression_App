@@ -2,6 +2,16 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.4.5] - 2026-08-27
+
+### Weighting transparency
+- Added explicit UI definitions for unweighted, 1/x, and 1/x² regression.
+- Weighted-model tooltips now show the objective function, variance assumption, SD assumption, and NumPy residual multiplier.
+- Added a Weighting Definitions dialog to the regression setup.
+- The How Calculated view now appends the exact weighting interpretation for the selected model.
+- Clarified that UI labels refer to the statistical weight on squared residuals, while NumPy `polyfit` receives the corresponding residual multiplier.
+- No numerical regression behavior changed in this release.
+
 ## [0.4.4] - 2026-08-27
 
 ### Regression workflow improvements
