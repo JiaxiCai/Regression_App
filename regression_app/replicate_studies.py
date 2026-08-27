@@ -74,12 +74,31 @@ def rotate_calibration(
         raise ValueError(f"Unknown model: {model_name}")
     fn = model_lookup[model_name]
     sets = sorted(mapped_rows["Replicate Set"].unique())
-    levels = sorted(mapped_rows["Level"].unique())
+
+    # Use a common calibration range across all replicate sets. This allows
+    # rotation to remain valid when one or more sets are missing isolated
+    # low/high calibrators (for example, a blank/No Peak TargetLynx response),
+    # while ensuring every calibration and evaluation uses the same levels.
+    level_sets = []
+    for set_id in sets:
+        g = mapped_rows[mapped_rows["Replicate Set"] == set_id]
+        level_sets.append(set(g["Level"].dropna().astype(int).unique()))
+
+    common_levels = set.intersection(*level_sets) if level_sets else set()
+    if len(common_levels) < min_calibrators:
+        raise ValueError(
+            f"Only {len(common_levels)} calibration level(s) are shared by all "
+            f"replicate sets; at least {min_calibrators} are required."
+        )
+
+    levels = sorted(common_levels)
+    working_rows = mapped_rows[mapped_rows["Level"].isin(levels)].copy()
     expected_levels = len(levels)
+
     results = []
     fit_rows = []
     for cal_set in sets:
-        cal = mapped_rows[mapped_rows["Replicate Set"] == cal_set].copy()
+        cal = working_rows[working_rows["Replicate Set"] == cal_set].copy()
         if cal["Level"].nunique() != expected_levels:
             continue
         cal = cal.sort_values("Nominal")
@@ -106,7 +125,7 @@ def rotate_calibration(
                 if fit.contiguous_range else ""
             ),
         })
-        eval_rows = mapped_rows[mapped_rows["Replicate Set"] != cal_set].copy()
+        eval_rows = working_rows[working_rows["Replicate Set"] != cal_set].copy()
         calc = fit.invert(eval_rows["Response_numeric"].to_numpy(float))
         nominal = eval_rows["Nominal"].to_numpy(float)
         bias = np.full_like(nominal, np.nan, dtype=float)
