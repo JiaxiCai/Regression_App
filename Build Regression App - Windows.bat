@@ -3,7 +3,7 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 echo ==========================================
-echo  Regression App v0.3.4 - Windows Builder
+echo  Regression App v0.3.5 - Windows Builder
 echo ==========================================
 echo.
 
@@ -47,7 +47,7 @@ if exist dist rmdir /s /q dist
 if exist RegressionApp.spec del /q RegressionApp.spec
 if exist RegressionApp-Portable.spec del /q RegressionApp-Portable.spec
 
-python -m PyInstaller --noconfirm --clean --windowed --onedir --name "RegressionApp" --hidden-import "regression_app.method_comparison" --hidden-import "regression_app.clinical_tools" --hidden-import "regression_app.targetlynx_converter" --hidden-import "regression_app.ui_helpers" --hidden-import "scipy.stats" --collect-all "scipy" --collect-all "matplotlib" main.py
+python -m PyInstaller --noconfirm --clean --windowed --onedir --name "RegressionApp" --collect-submodules "regression_app" --hidden-import "scipy.stats" --collect-all "scipy" --collect-all "matplotlib" main.py
 if errorlevel 1 goto :build_fail
 
 echo [4/7] Verifying folder bundle...
@@ -71,13 +71,22 @@ if errorlevel 1 (
 echo Folder bundle self-test passed.
 
 echo [5/7] Building single-file portable application...
-python -m PyInstaller --noconfirm --clean --windowed --onefile --name "RegressionApp-Portable" --hidden-import "regression_app.method_comparison" --hidden-import "regression_app.clinical_tools" --hidden-import "regression_app.targetlynx_converter" --hidden-import "regression_app.ui_helpers" --hidden-import "scipy.stats" --collect-all "scipy" --collect-all "matplotlib" main.py
+python -m PyInstaller --noconfirm --clean --windowed --onefile --name "RegressionApp-Portable" --collect-submodules "regression_app" --hidden-import "scipy.stats" --collect-all "scipy" --collect-all "matplotlib" main.py
 if errorlevel 1 goto :build_fail
 if not exist "dist\RegressionApp-Portable.exe" goto :build_fail
 
+echo Testing portable application...
+"dist\RegressionApp-Portable.exe" --self-test
+if errorlevel 1 (
+    echo ERROR: Portable bundle self-test failed.
+    echo Check %%USERPROFILE%%\RegressionApp_crash.log.
+    goto :build_fail
+)
+echo Portable bundle self-test passed.
+
 echo [6/7] Creating distributable ZIP and instructions...
 > "dist\README-WINDOWS.txt" (
-    echo Regression App v0.3.4 - Windows
+    echo Regression App v0.3.5 - Windows
     echo.
     echo EASIEST OPTION:
     echo   Run RegressionApp-Portable.exe.
@@ -88,8 +97,10 @@ echo [6/7] Creating distributable ZIP and instructions...
     echo.
     echo IMPORTANT:
     echo   Do NOT run RegressionApp.exe from inside the ZIP.
-    echo   Do NOT copy RegressionApp.exe by itself. The folder build depends on
-    echo   the adjacent _internal directory, including the bundled Python DLL.
+    echo   Do NOT copy RegressionApp.exe by itself.
+    echo.
+    echo This build also validates the dynamically loaded Regression App GUI
+    echo modules before reporting success.
 )
 powershell -NoProfile -Command "Compress-Archive -Path 'dist\RegressionApp' -DestinationPath 'dist\RegressionApp-Windows.zip' -Force"
 if errorlevel 1 goto :build_fail
