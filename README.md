@@ -1,4 +1,4 @@
-# Regression App v0.4.1
+# Regression App v0.4.4
 
 A cross-platform PySide6 desktop workbench for analytical and clinical laboratory data.
 
@@ -69,3 +69,13 @@ The application deliberately distinguishes Pearson r, Pearson r², ordinary resi
 ## Validation status
 
 This is research software and has not been validated for clinical use. Clinical-tool modules are quick-check implementations and are not complete reproductions of all CLSI EP05/EP06/EP07/EP17/EP28 requirements. Results intended for regulated or clinical use should be verified against independent reference implementations and known datasets.
+
+
+### v0.4.4 regression workflow
+
+- Spreadsheet-style Fill Down is available for Use, Type, X, and Y with Ctrl+D / Cmd+D.
+- Calibration points can be clicked to toggle calibrator inclusion/exclusion and refit immediately.
+- Model Comparison includes individual calibrator/QC bias drill-down.
+- Excluded calibrators remain available as diagnostic back-calculated points.
+- QC Summary reports mean, minimum, and maximum % bias.
+- Replicate Studies includes full-size plots and Levey–Jennings-style IS recovery.
