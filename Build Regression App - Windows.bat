@@ -3,7 +3,7 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 echo ==========================================
-echo  Regression App v0.4.7 - Windows Builder
+echo  Regression App v0.4.8 - Windows Builder
 echo ==========================================
 echo.
 
@@ -73,7 +73,7 @@ if errorlevel 1 (
 
 echo [4/5] Creating collaborator-ready ZIP...
 > "dist\README-WINDOWS.txt" (
-    echo Regression App v0.4.7 - Windows
+    echo Regression App v0.4.8 - Windows
     echo.
     echo 1. Extract RegressionApp-Windows.zip completely.
     echo 2. Open the extracted RegressionApp folder.
