@@ -15,6 +15,25 @@ def _write_crash_log(exc_text):
     except Exception:
         return None
 
+def _bundle_self_test():
+    """Import core packaged dependencies and exit; used by build scripts."""
+    import numpy
+    import pandas
+    import scipy
+    import matplotlib
+    import openpyxl
+    import PySide6
+    from regression_app import models, method_comparison, clinical_tools, targetlynx_converter
+    return 0
+
+if "--self-test" in sys.argv:
+    try:
+        raise SystemExit(_bundle_self_test())
+    except Exception:
+        text = traceback.format_exc()
+        _write_crash_log(text)
+        raise
+
 try:
     from regression_app.app import run
     if __name__ == "__main__":
@@ -23,7 +42,6 @@ except Exception:
     text = traceback.format_exc()
     log_path = _write_crash_log(text)
 
-    # Best-effort visible error instead of silent app exit.
     try:
         from PySide6.QtWidgets import QApplication, QMessageBox
         app = QApplication.instance() or QApplication(sys.argv)
