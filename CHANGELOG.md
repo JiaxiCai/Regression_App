@@ -2,6 +2,14 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.4.18] - 2026-08-27
+
+### Version display consistency
+- The application window title is now derived from the single `regression_app.__version__` source during direct-source reconstruction.
+- Removed stale title overrides from the weighting, replicate-studies, and AMR UI patches.
+- Fixes packaged builds that were functionally current but displayed older labels such as v0.4.9.
+- Future version bumps no longer require editing multiple UI modules.
+
 ## [0.4.17] - 2026-08-27
 
 ### Windows validation cleanup
