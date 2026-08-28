@@ -108,9 +108,14 @@ def normalize_generic_long(df):
         df[component_group].astype(str) if component_group else df[component_name].astype(str)
     )
     if component_type:
-        role_text = df[component_type].astype(str).str.casefold()
-        out["Component Role"] = np.where(
-            role_text.str.contains("internal") | role_text.str.fullmatch(r"is"), "IS", "Analyte"
+        role_text = df[component_type].astype(str).str.strip().str.casefold()
+        out["Component Role"] = np.select(
+            [
+                role_text.str.contains("internal") | role_text.str.fullmatch(r"is"),
+                role_text.str.contains("qualifier"),
+            ],
+            ["IS", "Ignore"],
+            default="Analyte",
         )
         out["Auto Role"] = out["Component Role"]
     else:
@@ -351,6 +356,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None):
     return {
         "ranking": ranking, "stage1": pd.DataFrame(stage1_rows),
         "criteria": criteria, "analytes": analytes, "internal_standards": is_names,
+        "pair_count_requested": int(len(analytes) * len(is_names)),
         "stage1_levels": stage1_levels,
         "_cache": {
             "cal_area": cal_area, "qc_area": qc_area,
