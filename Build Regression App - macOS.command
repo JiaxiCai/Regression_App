@@ -3,7 +3,7 @@ set -u
 cd "$(dirname "$0")"
 
 echo "=========================================="
-echo " Regression App v0.4.14 - macOS Builder"
+echo " Regression App v0.5.2 - macOS Builder"
 echo "=========================================="
 echo
 
@@ -86,8 +86,16 @@ else
     echo "[1/5] Build environment and dependencies are current; skipping pip."
 fi
 
+APP_VERSION="$(python -c 'import regression_app; print(regression_app.__version__)')"
+CACHE_VERSION="$(cat .buildenv/pyinstaller-app-version.snapshot 2>/dev/null || true)"
+if [ "$CACHE_VERSION" != "$APP_VERSION" ]; then
+    echo "Application version changed; refreshing PyInstaller analysis cache..."
+    rm -rf build/RegressionApp
+    printf '%s\n' "$APP_VERSION" > .buildenv/pyinstaller-app-version.snapshot
+fi
+
 echo "[2/5] Building RegressionApp.app..."
-# Preserve PyInstaller's build cache for faster incremental rebuilds.
+# Preserve PyInstaller's analysis cache within the same app version.
 rm -rf dist
 python -m PyInstaller \
   --noconfirm \
@@ -95,7 +103,9 @@ python -m PyInstaller \
   --onedir \
   --name RegressionApp \
   --paths "$PWD" \
+  --hidden-import regression_app \
   --hidden-import regression_app.app \
+  --hidden-import regression_app.ui_helpers \
   --hidden-import regression_app.weighting_ui_patch \
   --hidden-import regression_app.calibration_plot_patch \
   --hidden-import regression_app.amr_validation \
@@ -119,7 +129,7 @@ echo "[4/5] Creating ZIP..."
 rm -f RegressionApp-macOS.zip
 ditto -c -k --sequesterRsrc --keepParent dist/RegressionApp.app RegressionApp-macOS.zip || fail "Could not create ZIP."
 
-OUTPUT_DIR="$HOME/Desktop/RegressionApp-v0.4.14"
+OUTPUT_DIR="$HOME/Desktop/RegressionApp-v0.5.2"
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 cp -R dist/RegressionApp.app "$OUTPUT_DIR/"
@@ -127,4 +137,4 @@ cp RegressionApp-macOS.zip "$OUTPUT_DIR/"
 
 echo "[5/5] Finished."
 open "$OUTPUT_DIR"
-osascript -e 'display dialog "Regression App v0.4.14 built successfully and passed its packaged self-test." buttons {"OK"} default button "OK"'
+osascript -e 'display dialog "Regression App v0.5.2 built successfully and passed its packaged self-test." buttons {"OK"} default button "OK"'
