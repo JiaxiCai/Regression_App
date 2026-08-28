@@ -68,6 +68,8 @@ python -m PyInstaller \
   --hidden-import regression_app.app \
   --hidden-import regression_app.weighting_ui_patch \
   --hidden-import regression_app.calibration_plot_patch \
+  --hidden-import regression_app.amr_validation \
+  --hidden-import regression_app.amr_ui_patch \
   --hidden-import scipy.stats \
   main.py || fail "PyInstaller build failed."
 
