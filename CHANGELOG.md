@@ -2,6 +2,15 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.4.9] - 2026-08-27
+
+### Replicate Studies — unlabeled ladder inference
+- Added support for calibration-rotation studies where Sample Text does not contain "Cal" and study rows are exported as QC.
+- When explicit Cal labels are absent, the parser now segments repeated nominal-concentration ladders by injection order.
+- It then selects the repeated full-length ladder family, preventing shorter interleaved QC sequences from being misclassified as calibration sets.
+- Verified on `20260827_16x6.csv`: six 16-level Vancomycin ladders are detected correctly while the intervening 9-level QC sequences are excluded.
+- All six detected Vancomycin ladders fit successfully with the current Linear 1/x rotation model.
+
 ## [0.4.8] - 2026-08-27
 
 ### Replicate Studies — incomplete ladder handling
