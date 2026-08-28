@@ -48,7 +48,9 @@ jobs:
           --onedir
           --name RegressionApp
           --paths .
+          --hidden-import regression_app
           --hidden-import regression_app.app
+          --hidden-import regression_app.ui_helpers
           --hidden-import regression_app.weighting_ui_patch
           --hidden-import regression_app.calibration_plot_patch
           --hidden-import regression_app.amr_validation
@@ -85,7 +87,7 @@ jobs:
         shell: pwsh
         run: |
           @"
-          Regression App v0.5.1 - Windows
+          Regression App v0.5.2 - Windows
           Extract RegressionApp-Windows.zip completely, then run RegressionApp\RegressionApp.exe.
           No Python installation is required.
           Do not run the EXE from inside the ZIP or copy it away from _internal.
