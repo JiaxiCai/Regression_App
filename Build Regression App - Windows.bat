@@ -53,7 +53,7 @@ if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
 if exist RegressionApp.spec del /q RegressionApp.spec
 
-python -m PyInstaller --noconfirm --windowed --onedir --name "RegressionApp" --paths "%CD%" --collect-submodules "regression_app" --hidden-import "regression_app.app" --hidden-import "regression_app.weighting_ui_patch" --hidden-import "regression_app.calibration_plot_patch" --hidden-import "scipy.stats" main.py
+python -m PyInstaller --noconfirm --windowed --onedir --name "RegressionApp" --paths "%CD%" --collect-submodules "regression_app" --hidden-import "regression_app.app" --hidden-import "regression_app.weighting_ui_patch" --hidden-import "regression_app.calibration_plot_patch" --hidden-import "regression_app.amr_validation" --hidden-import "regression_app.amr_ui_patch" --hidden-import "scipy.stats" main.py
 if errorlevel 1 goto :build_fail
 
 echo [3/5] Validating packaged application...
