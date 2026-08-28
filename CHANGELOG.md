@@ -2,6 +2,14 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.4.17] - 2026-08-27
+
+### Windows validation cleanup
+- Removed the redundant recursive `python*.dll` presence check from the Windows builder.
+- The packaged `RegressionApp.exe --self-test` is now the authoritative runtime validation.
+- This avoids false failures when PyInstaller changes the internal DLL layout while still guaranteeing that the bundled Python runtime and imports are loadable.
+- EXE existence is still checked explicitly before the self-test.
+
 ## [0.4.16] - 2026-08-27
 
 ### Fixed — Windows output path validation
