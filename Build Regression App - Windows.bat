@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ==========================================
-echo  Regression App v0.4.14 - Windows Builder
+echo  Regression App v0.4.15 - Windows Builder
 echo ==========================================
 echo.
 
@@ -93,11 +93,29 @@ if "!DEPS_CHANGED!"=="1" (
     echo [1/5] Build environment and dependencies are current; skipping pip.
 )
 
-echo [2/5] Building folder application...
-REM Keep PyInstaller's build cache for fast incremental rebuilds.
-if exist dist rmdir /s /q dist
+echo [2/5] Preparing output folder...
+REM A prior RegressionApp process can keep EXE/DLL files in dist locked on Windows.
+REM Close it first, then retry cleanup. If Windows still holds the folder, use
+REM a fresh dist directory instead of throwing away the PyInstaller build cache.
+taskkill /F /T /IM RegressionApp.exe >nul 2>nul
+timeout /t 1 /nobreak >nul
 
-python -m PyInstaller --noconfirm --windowed --onedir --name "RegressionApp" --paths "%CD%" ^
+set "DIST_DIR=dist"
+if exist "!DIST_DIR!" (
+    for /L %%R in (1,1,4) do (
+        if exist "!DIST_DIR!" (
+            rmdir /s /q "!DIST_DIR!" >nul 2>nul
+            if exist "!DIST_DIR!" timeout /t 1 /nobreak >nul
+        )
+    )
+)
+if exist "!DIST_DIR!" (
+    set "DIST_DIR=dist-v0.4.15-!RANDOM!"
+    echo Previous dist folder is still locked; using !DIST_DIR! instead.
+)
+
+echo [2/5] Building folder application...
+python -m PyInstaller --noconfirm --windowed --onedir --name "RegressionApp" --paths "%CD%" --distpath "!DIST_DIR!" ^
   --hidden-import "regression_app.app" ^
   --hidden-import "regression_app.weighting_ui_patch" ^
   --hidden-import "regression_app.calibration_plot_patch" ^
@@ -112,14 +130,14 @@ python -m PyInstaller --noconfirm --windowed --onedir --name "RegressionApp" --p
 if errorlevel 1 goto :build_fail
 
 echo [3/5] Validating packaged application...
-if not exist "dist\RegressionApp\RegressionApp.exe" goto :build_fail
+if not exist "!DIST_DIR!\RegressionApp\RegressionApp.exe" goto :build_fail
 set "PYDLL="
-for /r "dist\RegressionApp" %%F in (python*.dll) do if not defined PYDLL set "PYDLL=%%F"
+for /r "!DIST_DIR!\RegressionApp" %%F in (python*.dll) do if not defined PYDLL set "PYDLL=%%F"
 if not defined PYDLL (
     echo ERROR: bundled Python DLL is missing.
     goto :build_fail
 )
-"dist\RegressionApp\RegressionApp.exe" --self-test
+"!DIST_DIR!\RegressionApp\RegressionApp.exe" --self-test
 if errorlevel 1 (
     echo ERROR: packaged application self-test failed.
     echo Check %%USERPROFILE%%\RegressionApp_crash.log.
@@ -127,8 +145,8 @@ if errorlevel 1 (
 )
 
 echo [4/5] Creating collaborator-ready ZIP...
-> "dist\README-WINDOWS.txt" (
-    echo Regression App v0.4.14 - Windows
+> "!DIST_DIR!\README-WINDOWS.txt" (
+    echo Regression App v0.4.15 - Windows
     echo.
     echo 1. Extract RegressionApp-Windows.zip completely.
     echo 2. Open the extracted RegressionApp folder.
@@ -136,12 +154,12 @@ echo [4/5] Creating collaborator-ready ZIP...
     echo.
     echo No Python installation is required on the collaborator's machine.
 )
-powershell -NoProfile -Command "Compress-Archive -Path 'dist\RegressionApp' -DestinationPath 'dist\RegressionApp-Windows.zip' -Force"
+powershell -NoProfile -Command "Compress-Archive -Path '!DIST_DIR!\RegressionApp' -DestinationPath '!DIST_DIR!\RegressionApp-Windows.zip' -Force"
 if errorlevel 1 goto :build_fail
 
 echo [5/5] Finished.
-echo Share: %cd%\dist\RegressionApp-Windows.zip
-explorer "%cd%\dist"
+echo Share: %cd%\!DIST_DIR!\RegressionApp-Windows.zip
+explorer "%cd%\!DIST_DIR!"
 pause
 exit /b 0
 
