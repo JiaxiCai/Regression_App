@@ -1,9 +1,9 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ==========================================
-echo  Regression App v0.4.11 - Windows Builder
+echo  Regression App v0.4.14 - Windows Builder
 echo ==========================================
 echo.
 
@@ -15,45 +15,100 @@ if not exist "regression_app\__init__.py" (
     echo ERROR: regression_app package is missing from the builder folder.
     goto :build_fail
 )
-if not exist "regression_app\app.py" (
-    echo ERROR: regression_app\app.py is missing.
+if not exist "tools\reconstruct_app.py" (
+    echo ERROR: tools\reconstruct_app.py is missing.
     goto :build_fail
 )
 
 set "PYTHON_CMD="
-py -3.12 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.12"
+py -3.14 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.14"
 if not defined PYTHON_CMD py -3.13 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.13"
-if not defined PYTHON_CMD py -3.14 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.14"
-if not defined PYTHON_CMD python -c "import sys; raise SystemExit(0 if (3,10) <= sys.version_info[:2] < (3,15) else 1)" >nul 2>nul && set "PYTHON_CMD=python"
+if not defined PYTHON_CMD py -3.12 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.12"
+if not defined PYTHON_CMD py -3.11 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.11"
+if not defined PYTHON_CMD py -3.10 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.10"
+if not defined PYTHON_CMD python -c "import sys; raise SystemExit(0 if (3,10) <= sys.version_info[:2] <= (3,14) else 1)" >nul 2>nul && set "PYTHON_CMD=python"
 
 if not defined PYTHON_CMD (
-    echo ERROR: Supported Python not found. Python 3.12 64-bit is recommended.
+    echo ERROR: Python 3.10 through 3.14 was not found.
+    echo Install a current 64-bit Python release from python.org.
     pause
     exit /b 1
 )
 
+for /f %%V in ('%PYTHON_CMD% -c "import sys; print(str(sys.version_info.major)+'.'+str(sys.version_info.minor))"') do set "SELECTED_PY=%%V"
+echo Using Python !SELECTED_PY!.
+
+echo [0/5] Preparing verified direct application source...
+%PYTHON_CMD% tools\reconstruct_app.py
+if errorlevel 1 goto :build_fail
+
+if exist ".buildenv\Scripts\python.exe" (
+    for /f %%V in ('.buildenv\Scripts\python.exe -c "import sys; print(str(sys.version_info.major)+'.'+str(sys.version_info.minor))"') do set "ENV_PY=%%V"
+    if not "!SELECTED_PY!"=="!ENV_PY!" (
+        echo Existing .buildenv uses Python !ENV_PY!; Python !SELECTED_PY! is preferred. Recreating it...
+        rmdir /s /q .buildenv
+    )
+)
+
+set "NEW_ENV=0"
 if not exist ".buildenv\Scripts\python.exe" (
     echo [1/5] Creating build environment...
     %PYTHON_CMD% -m venv .buildenv
     if errorlevel 1 goto :build_fail
-    call .buildenv\Scripts\activate.bat
-    python -m pip install --upgrade pip
+    set "NEW_ENV=1"
+)
+
+call .buildenv\Scripts\activate.bat
+
+set "DEPS_CHANGED=0"
+if "!NEW_ENV!"=="1" set "DEPS_CHANGED=1"
+if not exist ".buildenv\requirements.txt.snapshot" set "DEPS_CHANGED=1"
+if not exist ".buildenv\requirements-build.txt.snapshot" set "DEPS_CHANGED=1"
+
+if exist ".buildenv\requirements.txt.snapshot" (
+    fc /b requirements.txt ".buildenv\requirements.txt.snapshot" >nul 2>nul
+    if errorlevel 1 set "DEPS_CHANGED=1"
+)
+if exist ".buildenv\requirements-build.txt.snapshot" (
+    fc /b requirements-build.txt ".buildenv\requirements-build.txt.snapshot" >nul 2>nul
+    if errorlevel 1 set "DEPS_CHANGED=1"
+)
+
+if "!DEPS_CHANGED!"=="0" (
+    python -c "import PySide6,numpy,pandas,scipy,matplotlib,openpyxl,PyInstaller" >nul 2>nul
+    if errorlevel 1 set "DEPS_CHANGED=1"
+)
+
+if "!DEPS_CHANGED!"=="1" (
+    echo [1/5] Installing/updating build dependencies...
+    if "!NEW_ENV!"=="1" (
+        python -m pip install --disable-pip-version-check --upgrade pip
+        if errorlevel 1 goto :build_fail
+    )
+    python -m pip install --disable-pip-version-check --no-compile -r requirements-build.txt
     if errorlevel 1 goto :build_fail
-    python -m pip install --no-compile -r requirements-build.txt
-    if errorlevel 1 goto :build_fail
+    copy /y requirements.txt ".buildenv\requirements.txt.snapshot" >nul
+    copy /y requirements-build.txt ".buildenv\requirements-build.txt.snapshot" >nul
 ) else (
-    echo [1/5] Reusing existing build environment...
-    call .buildenv\Scripts\activate.bat
-    python -m pip install --no-compile -r requirements-build.txt
-    if errorlevel 1 goto :build_fail
+    echo [1/5] Build environment and dependencies are current; skipping pip.
 )
 
 echo [2/5] Building folder application...
-if exist build rmdir /s /q build
+REM Keep PyInstaller's build cache for fast incremental rebuilds.
 if exist dist rmdir /s /q dist
-if exist RegressionApp.spec del /q RegressionApp.spec
 
-python -m PyInstaller --noconfirm --windowed --onedir --name "RegressionApp" --paths "%CD%" --collect-submodules "regression_app" --hidden-import "regression_app.app" --hidden-import "regression_app.weighting_ui_patch" --hidden-import "regression_app.calibration_plot_patch" --hidden-import "regression_app.amr_validation" --hidden-import "regression_app.amr_ui_patch" --hidden-import "scipy.stats" main.py
+python -m PyInstaller --noconfirm --windowed --onedir --name "RegressionApp" --paths "%CD%" ^
+  --hidden-import "regression_app.app" ^
+  --hidden-import "regression_app.weighting_ui_patch" ^
+  --hidden-import "regression_app.calibration_plot_patch" ^
+  --hidden-import "regression_app.amr_validation" ^
+  --hidden-import "regression_app.amr_ui_patch" ^
+  --hidden-import "regression_app.replicate_studies" ^
+  --hidden-import "regression_app.replicate_ui_patch" ^
+  --hidden-import "regression_app.targetlynx_converter" ^
+  --hidden-import "regression_app.method_comparison" ^
+  --hidden-import "regression_app.clinical_tools" ^
+  --hidden-import "scipy.stats" main.py
 if errorlevel 1 goto :build_fail
 
 echo [3/5] Validating packaged application...
@@ -73,7 +128,7 @@ if errorlevel 1 (
 
 echo [4/5] Creating collaborator-ready ZIP...
 > "dist\README-WINDOWS.txt" (
-    echo Regression App v0.4.11 - Windows
+    echo Regression App v0.4.14 - Windows
     echo.
     echo 1. Extract RegressionApp-Windows.zip completely.
     echo 2. Open the extracted RegressionApp folder.
