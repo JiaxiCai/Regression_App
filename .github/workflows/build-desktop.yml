@@ -24,14 +24,17 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: |
             requirements.txt
             requirements-build.txt
 
+      - name: Reconstruct verified direct application source
+        run: python tools/reconstruct_app.py
+
       - name: Install dependencies
-        run: python -m pip install -r requirements-build.txt
+        run: python -m pip install --disable-pip-version-check -r requirements-build.txt
 
       - name: Build folder application
         run: >-
@@ -41,12 +44,16 @@ jobs:
           --onedir
           --name RegressionApp
           --paths .
-          --collect-submodules regression_app
           --hidden-import regression_app.app
           --hidden-import regression_app.weighting_ui_patch
           --hidden-import regression_app.calibration_plot_patch
           --hidden-import regression_app.amr_validation
           --hidden-import regression_app.amr_ui_patch
+          --hidden-import regression_app.replicate_studies
+          --hidden-import regression_app.replicate_ui_patch
+          --hidden-import regression_app.targetlynx_converter
+          --hidden-import regression_app.method_comparison
+          --hidden-import regression_app.clinical_tools
           --hidden-import scipy.stats
           main.py
 
@@ -56,6 +63,10 @@ jobs:
         run: |
           & "dist/RegressionApp/RegressionApp.exe" --self-test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Self-test macOS application
+        if: runner.os == 'macOS'
+        run: dist/RegressionApp.app/Contents/MacOS/RegressionApp --self-test
 
       - name: Zip macOS app
         if: runner.os == 'macOS'
@@ -68,7 +79,7 @@ jobs:
         shell: pwsh
         run: |
           @"
-          Regression App v0.4.11 - Windows
+          Regression App v0.4.14 - Windows
           Extract RegressionApp-Windows.zip completely, then run RegressionApp\RegressionApp.exe.
           No Python installation is required.
           Do not run the EXE from inside the ZIP or copy it away from _internal.
