@@ -2,6 +2,16 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.2] - 2026-08-27
+
+### Packaging cache reliability
+- Local builders now associate the PyInstaller analysis cache with the application version.
+- When the app version changes, only `build/RegressionApp` is invalidated so newly added modules cannot be omitted by a stale import graph.
+- Rebuilding the same version still reuses the PyInstaller analysis cache for speed.
+- Explicitly packages the `regression_app` package root and shared `ui_helpers` module in Windows, macOS, and GitHub Actions builds.
+- Updated stale macOS and Windows output/version labels to the current release.
+- Keeps the packaged executable self-test as the final distribution gate.
+
 ## [0.5.0] - 2026-08-27
 
 ### Surrogate Internal Standard Analysis
