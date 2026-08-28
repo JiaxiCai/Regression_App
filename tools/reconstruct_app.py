@@ -53,6 +53,14 @@ def main() -> int:
     text = source.decode("utf-8")
     text = text.replace("Regression App v0.4.12", f"Regression App v{version}")
     text = text.replace("# v0.4.12:", f"# v{version}:")
+
+    # Feature workspaces that live as normal modules are installed onto the
+    # confirmed direct-source MainWindow after reconstruction.
+    if "_install_surrogate_is_ui" not in text:
+        text += (
+            "\n\nfrom .surrogate_is_ui_patch import install as _install_surrogate_is_ui\n"
+            "_install_surrogate_is_ui(MainWindow)\n"
+        )
     output = text.encode("utf-8")
     output_digest = hashlib.sha256(output).hexdigest()
 
