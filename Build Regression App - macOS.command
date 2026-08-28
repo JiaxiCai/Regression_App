@@ -105,6 +105,8 @@ python -m PyInstaller \
   --hidden-import regression_app.targetlynx_converter \
   --hidden-import regression_app.method_comparison \
   --hidden-import regression_app.clinical_tools \
+  --hidden-import regression_app.surrogate_is \
+  --hidden-import regression_app.surrogate_is_ui_patch \
   --hidden-import scipy.stats \
   main.py || fail "PyInstaller build failed."
 
