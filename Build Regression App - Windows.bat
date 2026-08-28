@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ==========================================
-echo  Regression App v0.4.18 - Windows Builder
+echo  Regression App v0.5.0 - Windows Builder
 echo ==========================================
 echo.
 
@@ -126,6 +126,8 @@ python -m PyInstaller --noconfirm --windowed --onedir --name "RegressionApp" --p
   --hidden-import "regression_app.targetlynx_converter" ^
   --hidden-import "regression_app.method_comparison" ^
   --hidden-import "regression_app.clinical_tools" ^
+  --hidden-import "regression_app.surrogate_is" ^
+  --hidden-import "regression_app.surrogate_is_ui_patch" ^
   --hidden-import "scipy.stats" main.py
 if errorlevel 1 goto :build_fail
 
