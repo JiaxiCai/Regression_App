@@ -15,7 +15,8 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 
 from .surrogate_is import (
     SurrogateCriteria, load_surrogate_data, analyze_surrogate_is,
-    pair_metric_matrix, compute_pair_detail, export_surrogate_workbook,
+    component_mapping_table, pair_metric_matrix, compute_pair_detail,
+    export_surrogate_workbook,
 )
 from .ui_helpers import SortableTableItem, configure_sortable_table, make_table_filter_bar
 
@@ -45,6 +46,7 @@ def install(MainWindow):
     def wrapped_init(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
         self.sis_data = None; self.sis_result = None; self.sis_path = None
+        self.sis_component_mapping = None
         _build_tab(self)
     MainWindow.__init__ = wrapped_init
 
@@ -91,6 +93,36 @@ def _build_tab(w):
 
     w.sis_note = QLabel(""); w.sis_note.setWordWrap(True); root.addWidget(w.sis_note)
     outtabs = QTabWidget()
+
+    mapping_page = QWidget(); ml = QVBoxLayout(mapping_page)
+    mapping_intro = QLabel(
+        "Review the automatic compound assignments before analysis. Change Role to "
+        "Analyte, Internal Standard, or Ignore; uncheck Include to exclude a component "
+        "from the current benchmark without changing its assignment."
+    )
+    mapping_intro.setWordWrap(True); ml.addWidget(mapping_intro)
+    mapping_actions = QHBoxLayout()
+    reset_map = QPushButton("Reset to Automatic")
+    reset_map.clicked.connect(lambda: _reset_mapping(w))
+    mapping_actions.addWidget(reset_map)
+    include_all = QPushButton("Include All")
+    include_all.clicked.connect(lambda: _set_all_mapping_included(w, True))
+    mapping_actions.addWidget(include_all)
+    exclude_all = QPushButton("Exclude All")
+    exclude_all.clicked.connect(lambda: _set_all_mapping_included(w, False))
+    mapping_actions.addWidget(exclude_all)
+    mapping_actions.addStretch()
+    w.sis_pair_estimate = QLabel("Load a dataset to review assignments.")
+    mapping_actions.addWidget(w.sis_pair_estimate)
+    ml.addLayout(mapping_actions)
+    w.sis_mapping_table = QTableWidget(0, 6)
+    w.sis_mapping_table.setHorizontalHeaderLabels([
+        "Include", "Component", "Automatic Role", "Role", "Calibrator Rows", "QC Rows"
+    ])
+    w.sis_mapping_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+    w.sis_mapping_table.horizontalHeader().setStretchLastSection(True)
+    ml.addWidget(w.sis_mapping_table, 1)
+    outtabs.addTab(mapping_page, "Component Mapping")
 
     rank_page = QWidget(); rl = QVBoxLayout(rank_page)
     w.sis_ranking = QTableWidget(); w.sis_ranking.setSelectionBehavior(QTableWidget.SelectRows)
@@ -144,7 +176,9 @@ def _load(w):
     if not path: return
     try:
         data, meta = load_surrogate_data(path); w.sis_data = data; w.sis_path = path
+        w.sis_component_mapping = component_mapping_table(data)
         w.sis_file.setText(Path(path).name)
+        _populate_mapping(w)
         n_an = data.loc[data["Component Role"] == "Analyte", "Component"].nunique()
         n_is = data.loc[data["Component Role"] == "IS", "Component"].nunique()
         w.sis_note.setText(
@@ -155,11 +189,113 @@ def _load(w):
         QMessageBox.critical(w, "Surrogate IS import failed", str(exc))
 
 
+def _populate_mapping(w):
+    mapping = w.sis_component_mapping
+    if mapping is None:
+        return
+    table = w.sis_mapping_table
+    table.blockSignals(True)
+    table.setRowCount(len(mapping))
+    for r, (_, rec) in enumerate(mapping.iterrows()):
+        include = QTableWidgetItem("")
+        include.setFlags(include.flags() | Qt.ItemIsUserCheckable)
+        include.setCheckState(Qt.Checked if bool(rec["Include"]) else Qt.Unchecked)
+        table.setItem(r, 0, include)
+
+        for c, key in [(1, "Component"), (2, "Automatic Role"), (4, "Calibrator Rows"), (5, "QC Rows")]:
+            item = QTableWidgetItem(_fmt(rec[key]))
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+            table.setItem(r, c, item)
+
+        role = QComboBox()
+        role.addItems(["Analyte", "Internal Standard", "Ignore"])
+        role_value = str(rec["Role"])
+        if role_value == "IS":
+            role_value = "Internal Standard"
+        role.setCurrentText(role_value)
+        role.currentTextChanged.connect(lambda _=None: _update_mapping_summary(w))
+        table.setCellWidget(r, 3, role)
+
+    table.blockSignals(False)
+    try:
+        table.itemChanged.disconnect()
+    except Exception:
+        pass
+    table.itemChanged.connect(lambda item: _update_mapping_summary(w) if item.column() == 0 else None)
+    _update_mapping_summary(w)
+
+
+def _mapping_from_ui(w):
+    rows = []
+    table = w.sis_mapping_table
+    for r in range(table.rowCount()):
+        component = table.item(r, 1).text()
+        auto = table.item(r, 2).text()
+        include = table.item(r, 0).checkState() == Qt.Checked
+        role_widget = table.cellWidget(r, 3)
+        role = role_widget.currentText() if role_widget is not None else auto
+        if role == "Internal Standard":
+            role = "IS"
+        rows.append({
+            "Component": component,
+            "Automatic Role": auto,
+            "Role": role,
+            "Include": include,
+            "Calibrator Rows": int(float(table.item(r, 4).text() or 0)),
+            "QC Rows": int(float(table.item(r, 5).text() or 0)),
+        })
+    import pandas as pd
+    return pd.DataFrame(rows)
+
+
+def _update_mapping_summary(w):
+    if not hasattr(w, "sis_mapping_table") or w.sis_mapping_table.rowCount() == 0:
+        return
+    mapping = _mapping_from_ui(w)
+    inc = mapping[mapping["Include"].astype(bool)]
+    n_an = int((inc["Role"] == "Analyte").sum())
+    n_is = int((inc["Role"] == "IS").sum())
+    ignored = int((inc["Role"] == "Ignore").sum())
+    w.sis_pair_estimate.setText(
+        f"{n_an} analyte(s) × {n_is} IS = {n_an * n_is:,} pair(s)"
+        + (f"; {ignored} included component(s) ignored" if ignored else "")
+    )
+
+
+def _reset_mapping(w):
+    if w.sis_component_mapping is None:
+        return
+    _populate_mapping(w)
+
+
+def _set_all_mapping_included(w, included):
+    table = w.sis_mapping_table
+    table.blockSignals(True)
+    for r in range(table.rowCount()):
+        item = table.item(r, 0)
+        if item is not None:
+            item.setCheckState(Qt.Checked if included else Qt.Unchecked)
+    table.blockSignals(False)
+    _update_mapping_summary(w)
+
+
 def _run(w):
     if w.sis_data is None:
         QMessageBox.information(w, "No dataset", "Load a surrogate-IS dataset first."); return
     try:
-        w.sis_result = analyze_surrogate_is(w.sis_data, _criteria(w)); rank = w.sis_result["ranking"]
+        mapping = _mapping_from_ui(w)
+        included = mapping[mapping["Include"].astype(bool)]
+        n_an = int((included["Role"] == "Analyte").sum())
+        n_is = int((included["Role"] == "IS").sum())
+        if n_an == 0 or n_is == 0:
+            QMessageBox.information(
+                w, "Component mapping",
+                "Select at least one included Analyte and one included Internal Standard."
+            )
+            return
+        w.sis_result = analyze_surrogate_is(
+            w.sis_data, _criteria(w), component_mapping=mapping
+        ); rank = w.sis_result["ranking"]
         _fill_table(w.sis_ranking, rank); _fill_table(w.sis_stage1, w.sis_result["stage1"])
         passed = int(rank["Pass"].sum()) if not rank.empty else 0
         w.sis_note.setText(f"Evaluated {len(rank)} analyte–IS pairs; {passed} met all current calibration and QC criteria.")
