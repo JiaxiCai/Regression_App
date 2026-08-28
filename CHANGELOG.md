@@ -2,6 +2,17 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.4.14] - 2026-08-27
+
+### Direct-source packaging and build efficiency
+- GitHub/local builders now reconstruct and checksum-verify the confirmed working direct `regression_app/app.py` before packaging; the executable no longer depends on the historical runtime Base64/zlib chunk loader.
+- Windows and macOS builders prefer Python 3.14 and support Python 3.10–3.14.
+- Local builders skip dependency installation when the build environment is healthy and the requirements files are unchanged.
+- Existing virtual environments are recreated only when their Python major/minor does not match the preferred interpreter.
+- PyInstaller's analysis cache is retained for faster incremental builds; only the final `dist` output is replaced.
+- Broad `--collect-submodules regression_app` packaging was removed in favor of explicit application-module imports.
+- GitHub Actions now builds and self-tests both Windows and macOS using Python 3.14.
+
 ## [0.4.11] - 2026-08-27
 
 ### Fixed — correct compressed GUI payload sequence
