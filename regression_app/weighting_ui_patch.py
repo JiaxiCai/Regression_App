@@ -79,7 +79,6 @@ def install(MainWindow):
 
     def patched_init(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
-        self.setWindowTitle("Regression App v0.4.5")
 
         # Make the familiar model labels self-documenting without making them
         # so long that the model selector becomes difficult to scan.
