@@ -34,7 +34,21 @@ jobs:
         run: python -m pip install -r requirements-build.txt
 
       - name: Build folder application
-        run: python -m PyInstaller --noconfirm --windowed --onedir --name RegressionApp --collect-submodules regression_app --hidden-import scipy.stats main.py
+        run: >-
+          python -m PyInstaller
+          --noconfirm
+          --windowed
+          --onedir
+          --name RegressionApp
+          --paths .
+          --collect-submodules regression_app
+          --hidden-import regression_app.app
+          --hidden-import regression_app.weighting_ui_patch
+          --hidden-import regression_app.calibration_plot_patch
+          --hidden-import regression_app.amr_validation
+          --hidden-import regression_app.amr_ui_patch
+          --hidden-import scipy.stats
+          main.py
 
       - name: Self-test Windows application
         if: runner.os == 'Windows'
@@ -54,7 +68,7 @@ jobs:
         shell: pwsh
         run: |
           @"
-          Regression App v0.4.0 - Windows
+          Regression App v0.4.9 - Windows
           Extract RegressionApp-Windows.zip completely, then run RegressionApp\RegressionApp.exe.
           No Python installation is required.
           Do not run the EXE from inside the ZIP or copy it away from _internal.
