@@ -212,9 +212,23 @@ def _selected_pair(w):
     if not w.sis_result: return None
     rows = w.sis_ranking.selectionModel().selectedRows()
     if not rows: return None
-    r = rows[0].row(); rank = w.sis_result["ranking"]
-    if r >= len(rank): return None
-    rec = rank.iloc[r]; return str(rec["Analyte"]), str(rec["Internal Standard"])
+    r = rows[0].row()
+
+    headers = {
+        w.sis_ranking.horizontalHeaderItem(c).text(): c
+        for c in range(w.sis_ranking.columnCount())
+        if w.sis_ranking.horizontalHeaderItem(c) is not None
+    }
+    a_col = headers.get("Analyte")
+    is_col = headers.get("Internal Standard")
+    if a_col is None or is_col is None:
+        return None
+
+    a_item = w.sis_ranking.item(r, a_col)
+    is_item = w.sis_ranking.item(r, is_col)
+    if a_item is None or is_item is None:
+        return None
+    return a_item.text(), is_item.text()
 
 
 def _selection_changed(w):
