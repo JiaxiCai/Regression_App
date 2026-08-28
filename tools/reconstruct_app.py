@@ -40,11 +40,21 @@ def main() -> int:
             f"Expected {EXPECTED_SHA256}, got {digest}."
         )
 
-    OUTPUT.write_bytes(source)
+    # Normalize the visible application version after the transport checksum
+    # is verified. The transport payload is the confirmed-working direct
+    # source from v0.4.12; subsequent releases layer normal modules/build
+    # changes on top of that source.
+    text = source.decode("utf-8")
+    text = text.replace("Regression App v0.4.12", "Regression App v0.4.14")
+    text = text.replace("# v0.4.12:", "# v0.4.14:")
+    output = text.encode("utf-8")
+    output_digest = hashlib.sha256(output).hexdigest()
+
+    OUTPUT.write_bytes(output)
     py_compile.compile(str(OUTPUT), doraise=True)
     print(
         f"Reconstructed {OUTPUT.relative_to(ROOT)} "
-        f"({len(source):,} bytes, SHA-256 {digest})."
+        f"({len(output):,} bytes, SHA-256 {output_digest})."
     )
     return 0
 
