@@ -23,7 +23,10 @@ def _bundle_self_test():
     import matplotlib
     import openpyxl
     import PySide6
-    from regression_app import models, method_comparison, clinical_tools, targetlynx_converter
+    from regression_app import (
+        models, method_comparison, clinical_tools, targetlynx_converter,
+        surrogate_is, surrogate_is_ui_patch,
+    )
     import regression_app.app
     return 0
 
