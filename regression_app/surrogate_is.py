@@ -69,6 +69,7 @@ def normalize_targetlynx(df):
     if not isinstance(is_flag, pd.Series):
         is_flag = pd.Series(bool(is_flag), index=df.index)
     out["Component Role"] = np.where(is_flag.astype(bool), "IS", "Analyte")
+    out["Auto Role"] = out["Component Role"]
     out["Nominal"] = _num(df.get("Std. Conc", np.nan))
     out["Area"] = _num(df["Area"])
     out["Injection"] = _num(df[inj_col]) if inj_col else np.arange(1, len(df) + 1)
@@ -111,14 +112,53 @@ def normalize_generic_long(df):
         out["Component Role"] = np.where(
             role_text.str.contains("internal") | role_text.str.fullmatch(r"is"), "IS", "Analyte"
         )
+        out["Auto Role"] = out["Component Role"]
     else:
         nm = df[component_name].astype(str)
         is_mask = nm.str.contains(r"(?:-D\d+\b|-\d+C\d+\b|-\d+N\d+\b)", regex=True, case=False)
         out["Component Role"] = np.where(is_mask, "IS", "Analyte")
+        out["Auto Role"] = out["Component Role"]
     out["Nominal"] = _num(df[concentration])
     out["Area"] = _num(df[area])
     out["Injection"] = _num(df[injection]) if injection else np.arange(1, len(df) + 1)
     return out.reset_index(drop=True)
+
+
+def component_mapping_table(normalized):
+    """Return one editable setup row per detected component."""
+    rows = []
+    for component, g in normalized.groupby("Component", sort=True):
+        auto = str(g.get("Auto Role", g["Component Role"]).iloc[0])
+        rows.append({
+            "Component": str(component),
+            "Automatic Role": auto,
+            "Role": str(g["Component Role"].iloc[0]),
+            "Include": True,
+            "Calibrator Rows": int(_sample_type_mask(g["Sample Type"], "cal").sum()) if "Sample Type" in g else 0,
+            "QC Rows": int(_sample_type_mask(g["Sample Type"], "qc").sum()) if "Sample Type" in g else 0,
+        })
+    return pd.DataFrame(rows)
+
+
+def apply_component_mapping(normalized, mapping):
+    """Apply user-visible component role/include choices to a copy of the data."""
+    data = normalized.copy()
+    if mapping is None or len(mapping) == 0:
+        return data
+
+    role_map = {}
+    include_map = {}
+    for _, row in mapping.iterrows():
+        name = str(row["Component"])
+        role = str(row.get("Role", row.get("Automatic Role", "Ignore")))
+        include = bool(row.get("Include", True))
+        role_map[name] = role
+        include_map[name] = include
+
+    data["Component Role"] = data["Component"].astype(str).map(role_map).fillna(data["Component Role"])
+    keep = data["Component"].astype(str).map(include_map).fillna(True).astype(bool)
+    keep &= data["Component Role"].astype(str).isin(["Analyte", "IS"])
+    return data.loc[keep].copy()
 
 
 def _sample_type_mask(series, kind):
@@ -229,9 +269,9 @@ def _qc_summary(calc, nominal):
     }
 
 
-def analyze_surrogate_is(normalized, criteria=None):
+def analyze_surrogate_is(normalized, criteria=None, component_mapping=None):
     criteria = criteria or SurrogateCriteria()
-    data = normalized.copy()
+    data = apply_component_mapping(normalized, component_mapping)
     cal_rows = _sample_type_mask(data["Sample Type"], "cal")
     qc_rows = _sample_type_mask(data["Sample Type"], "qc")
     if not cal_rows.any(): raise ValueError("No calibrator/standard rows were detected.")
