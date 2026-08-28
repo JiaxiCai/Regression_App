@@ -2,6 +2,17 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.4] - 2026-08-27
+
+### Surrogate IS component mapping and pair selection
+- Added a visible Component Mapping setup tab before surrogate-IS analysis.
+- Automatic analyte/internal-standard recognition remains enabled and is shown explicitly for every detected component.
+- Users can override each component as Analyte, Internal Standard, or Ignore.
+- Added an independent Include toggle so components can be excluded from the current benchmark without changing their assigned role.
+- Added Reset to Automatic, Include All, and Exclude All controls.
+- Displays the estimated analyte × IS pair count before analysis, making unexpectedly large benchmark matrices visible before execution.
+- Surrogate analysis now runs only the user-selected analytes and internal standards.
+
 ## [0.5.3] - 2026-08-27
 
 ### Surrogate IS scalability
