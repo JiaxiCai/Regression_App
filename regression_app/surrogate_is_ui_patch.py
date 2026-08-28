@@ -293,6 +293,19 @@ def _run(w):
                 "Select at least one included Analyte and one included Internal Standard."
             )
             return
+        pair_count = n_an * n_is
+        if pair_count > 2000:
+            answer = QMessageBox.warning(
+                w,
+                "Large surrogate-IS benchmark",
+                f"This setup will evaluate {n_an} analytes × {n_is} internal standards = "
+                f"{pair_count:,} pairs. Large analyses can be CPU-intensive.\n\n"
+                "Continue with this selection?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
         w.sis_result = analyze_surrogate_is(
             w.sis_data, _criteria(w), component_mapping=mapping
         ); rank = w.sis_result["ranking"]
