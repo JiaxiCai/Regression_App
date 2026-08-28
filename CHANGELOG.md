@@ -2,6 +2,14 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.4.16] - 2026-08-27
+
+### Fixed — Windows output path validation
+- Enabled delayed variable expansion so `!DIST_DIR!` resolves correctly in the Windows builder.
+- PyInstaller now receives `--distpath "!DIST_DIR!"`, matching the validation and ZIP paths.
+- Fixes false `RegressionApp.exe was not created` errors after otherwise successful builds.
+- Keeps the locked-output fallback introduced in v0.4.15.
+
 ## [0.4.15] - 2026-08-27
 
 ### Windows rebuild reliability
