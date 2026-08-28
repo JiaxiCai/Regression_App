@@ -41,12 +41,18 @@ def main() -> int:
         )
 
     # Normalize the visible application version after the transport checksum
-    # is verified. The transport payload is the confirmed-working direct
-    # source from v0.4.12; subsequent releases layer normal modules/build
-    # changes on top of that source.
+    # is verified. Read the single package version source so the title cannot
+    # drift from the actual release version.
+    init_text = (ROOT / "regression_app" / "__init__.py").read_text(encoding="utf-8")
+    import re
+    match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', init_text)
+    if not match:
+        raise SystemExit("Could not determine regression_app.__version__.")
+    version = match.group(1)
+
     text = source.decode("utf-8")
-    text = text.replace("Regression App v0.4.12", "Regression App v0.4.14")
-    text = text.replace("# v0.4.12:", "# v0.4.14:")
+    text = text.replace("Regression App v0.4.12", f"Regression App v{version}")
+    text = text.replace("# v0.4.12:", f"# v{version}:")
     output = text.encode("utf-8")
     output_digest = hashlib.sha256(output).hexdigest()
 
