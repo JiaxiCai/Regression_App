@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ==========================================
-echo  Regression App v0.5.1 - Windows Builder
+echo  Regression App v0.5.2 - Windows Builder
 echo ==========================================
 echo.
 
@@ -93,6 +93,15 @@ if "!DEPS_CHANGED!"=="1" (
     echo [1/5] Build environment and dependencies are current; skipping pip.
 )
 
+for /f %%V in ('python -c "import regression_app; print(regression_app.__version__)"') do set "APP_VERSION=%%V"
+set "CACHE_VERSION="
+if exist ".buildenv\pyinstaller-app-version.snapshot" set /p CACHE_VERSION=<".buildenv\pyinstaller-app-version.snapshot"
+if not "!CACHE_VERSION!"=="!APP_VERSION!" (
+    echo Application version changed from !CACHE_VERSION! to !APP_VERSION!; refreshing PyInstaller analysis cache...
+    if exist "build\RegressionApp" rmdir /s /q "build\RegressionApp"
+    > ".buildenv\pyinstaller-app-version.snapshot" echo !APP_VERSION!
+)
+
 echo [2/5] Preparing output folder...
 REM A prior RegressionApp process can keep EXE/DLL files in dist locked on Windows.
 REM Close it first, then retry cleanup. If Windows still holds the folder, use
@@ -110,13 +119,15 @@ if exist "!DIST_DIR!" (
     )
 )
 if exist "!DIST_DIR!" (
-    set "DIST_DIR=dist-v0.4.15-!RANDOM!"
+    set "DIST_DIR=dist-v0.5.2-!RANDOM!"
     echo Previous dist folder is still locked; using !DIST_DIR! instead.
 )
 
 echo [2/5] Building folder application...
 python -m PyInstaller --noconfirm --windowed --onedir --name "RegressionApp" --paths "%CD%" --distpath "!DIST_DIR!" ^
+  --hidden-import "regression_app" ^
   --hidden-import "regression_app.app" ^
+  --hidden-import "regression_app.ui_helpers" ^
   --hidden-import "regression_app.weighting_ui_patch" ^
   --hidden-import "regression_app.calibration_plot_patch" ^
   --hidden-import "regression_app.amr_validation" ^
@@ -148,7 +159,7 @@ if errorlevel 1 (
 
 echo [4/5] Creating collaborator-ready ZIP...
 > "!DIST_DIR!\README-WINDOWS.txt" (
-    echo Regression App v0.4.15 - Windows
+    echo Regression App v0.5.2 - Windows
     echo.
     echo 1. Extract RegressionApp-Windows.zip completely.
     echo 2. Open the extracted RegressionApp folder.
