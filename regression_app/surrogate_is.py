@@ -138,7 +138,7 @@ def component_mapping_table(normalized):
             "Component": str(component),
             "Automatic Role": auto,
             "Role": str(g["Component Role"].iloc[0]),
-            "Include": True,
+            "Include": str(g["Component Role"].iloc[0]) != "Ignore",
             "Calibrator Rows": int(_sample_type_mask(g["Sample Type"], "cal").sum()) if "Sample Type" in g else 0,
             "QC Rows": int(_sample_type_mask(g["Sample Type"], "qc").sum()) if "Sample Type" in g else 0,
         })
