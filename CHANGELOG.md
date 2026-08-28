@@ -2,6 +2,14 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.4.11] - 2026-08-27
+
+### Fixed — correct compressed GUI payload sequence
+- Corrected the generated GUI loader to use chunks 00–04 followed by 06–08.
+- `app_chunk_05` is a stale tail from the older compressed GUI payload and must not be inserted into the current stream.
+- This addresses both prior zlib failure modes: checksum mismatch and truncated stream.
+- Newer feature modules continue to load after the base GUI payload.
+
 ## [0.4.10] - 2026-08-27
 
 ### Fixed — Windows/macOS startup zlib error
