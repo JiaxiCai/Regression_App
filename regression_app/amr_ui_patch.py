@@ -57,7 +57,6 @@ def install(MainWindow):
         self.amr_path = None
         self._amr_updating_levels = False
         _build_tab(self)
-        self.setWindowTitle("Regression App v0.4.9")
 
     MainWindow.__init__ = wrapped_init
 
