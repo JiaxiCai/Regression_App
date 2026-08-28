@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ==========================================
-echo  Regression App v0.5.0 - Windows Builder
+echo  Regression App v0.5.1 - Windows Builder
 echo ==========================================
 echo.
 
