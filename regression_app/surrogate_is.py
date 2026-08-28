@@ -245,7 +245,7 @@ def analyze_surrogate_is(normalized, criteria=None):
     if not is_names: raise ValueError("No internal-standard components were detected.")
     groups = _group_lookup(data)
 
-    rankings = []; detail = {}; stage1_rows = []
+    rankings = []; stage1_rows = []; stage1_levels = {}
     for analyte in analytes:
         idx = cal_area.index.intersection(cal_nom.index)
         x = _num(cal_nom.loc[idx, analyte]); y = _num(cal_area.loc[idx, analyte])
@@ -258,6 +258,7 @@ def analyze_surrogate_is(normalized, criteria=None):
             "Stage 1 Max |Bias| %": s1["max_cal_abs_bias_pct"] if s1 else np.nan,
             "Stage 1 Fit R2": s1["fit_r2"] if s1 else np.nan,
         })
+        stage1_levels[str(analyte)] = list(map(float, levels))
         if not levels: continue
 
         for is_name in is_names:
@@ -280,14 +281,8 @@ def analyze_surrogate_is(normalized, criteria=None):
                 qratio = (qa[qvalid] / qi[qvalid]).to_numpy(float)
                 qnom = qn[qvalid].to_numpy(float); qcalc = fit.invert(qratio)
                 by_level, qs = _qc_summary(qcalc, qnom)
-                sample_detail = pd.DataFrame({
-                    "Sample Key": [i[0] for i in qidx[qvalid]],
-                    "Sample Name": [i[1] for i in qidx[qvalid]],
-                    "Nominal": qnom, "Calculated": qcalc,
-                })
-                sample_detail["Bias %"] = (sample_detail["Calculated"] - sample_detail["Nominal"]) / sample_detail["Nominal"] * 100.0
             else:
-                by_level, qs, sample_detail = pd.DataFrame(), {}, pd.DataFrame()
+                by_level, qs = pd.DataFrame(), {}
 
             qc_pass = bool(qs) and (
                 np.isfinite(qs.get("qc_mean_abs_bias_pct", np.nan))
@@ -306,10 +301,6 @@ def analyze_surrogate_is(normalized, criteria=None):
                 "QC Max |Bias| %": qs.get("qc_max_abs_bias_pct", np.nan), "QC Max CV %": qs.get("qc_max_cv_pct", np.nan),
             }
             rankings.append(row)
-            detail[(analyte, is_name)] = {
-                "fit": fit, "x_cal": xfit, "ratio_cal": ratio,
-                "qc_by_level": by_level, "qc_samples": sample_detail, "summary": row,
-            }
 
     ranking = pd.DataFrame(rankings)
     if not ranking.empty:
@@ -318,8 +309,84 @@ def analyze_surrogate_is(normalized, criteria=None):
             ascending=[True, False, True, True, True], na_position="last"
         ).reset_index(drop=True)
     return {
-        "ranking": ranking, "stage1": pd.DataFrame(stage1_rows), "detail": detail,
+        "ranking": ranking, "stage1": pd.DataFrame(stage1_rows),
         "criteria": criteria, "analytes": analytes, "internal_standards": is_names,
+        "stage1_levels": stage1_levels,
+        "_cache": {
+            "cal_area": cal_area, "qc_area": qc_area,
+            "cal_nom": cal_nom, "qc_nom": qc_nom,
+        },
+    }
+
+
+def compute_pair_detail(result, analyte, is_name):
+    """Recompute detailed calibration/QC data for one selected pair only.
+
+    Bulk analysis intentionally stores only compact pair summaries. This
+    function reconstructs the fit and QC sample tables on demand so memory
+    usage does not scale with pair_count × QC_rows.
+    """
+    criteria = result["criteria"]
+    cache = result.get("_cache", {})
+    cal_area = cache.get("cal_area"); qc_area = cache.get("qc_area")
+    cal_nom = cache.get("cal_nom"); qc_nom = cache.get("qc_nom")
+    if any(x is None for x in (cal_area, qc_area, cal_nom, qc_nom)):
+        raise ValueError("Detailed pair cache is unavailable.")
+
+    levels = result.get("stage1_levels", {}).get(str(analyte), [])
+    if not levels:
+        raise ValueError(f"No Stage 1 calibration range is available for {analyte}.")
+
+    idx = cal_area.index.intersection(cal_nom.index)
+    xa = _num(cal_nom.loc[idx, analyte]); aa = _num(cal_area.loc[idx, analyte])
+    ia = _num(cal_area.loc[idx, is_name])
+    valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & xa.isin(levels)
+    if int(valid.sum()) < criteria.min_calibrators:
+        raise ValueError("Too few usable calibrators for this pair.")
+
+    xfit = xa[valid].to_numpy(float)
+    ratio = (aa[valid] / ia[valid]).to_numpy(float)
+    metrics = _fit_candidate(xfit, ratio, criteria)
+    if metrics is None:
+        raise ValueError("The selected pair could not be fitted.")
+    fit = metrics["fit"]
+
+    qidx = qc_area.index.intersection(qc_nom.index)
+    sample_detail = pd.DataFrame()
+    by_level = pd.DataFrame()
+    if analyte in qc_area.columns and is_name in qc_area.columns and analyte in qc_nom.columns:
+        qa = _num(qc_area.loc[qidx, analyte]); qi = _num(qc_area.loc[qidx, is_name])
+        qn = _num(qc_nom.loc[qidx, analyte])
+        qvalid = np.isfinite(qa) & np.isfinite(qi) & np.isfinite(qn) & (qi > 0) & (qn >= metrics["lloq"]) & (qn <= metrics["uloq"])
+        qratio = (qa[qvalid] / qi[qvalid]).to_numpy(float)
+        qnom = qn[qvalid].to_numpy(float)
+        qcalc = fit.invert(qratio)
+        by_level, _ = _qc_summary(qcalc, qnom)
+        sample_detail = pd.DataFrame({
+            "Sample Key": [i[0] for i in qidx[qvalid]],
+            "Sample Name": [i[1] for i in qidx[qvalid]],
+            "Nominal": qnom,
+            "Calculated": qcalc,
+        })
+        sample_detail["Bias %"] = (
+            (sample_detail["Calculated"] - sample_detail["Nominal"])
+            / sample_detail["Nominal"] * 100.0
+        )
+
+    ranking = result.get("ranking", pd.DataFrame())
+    match = ranking[
+        (ranking["Analyte"].astype(str) == str(analyte))
+        & (ranking["Internal Standard"].astype(str) == str(is_name))
+    ]
+    summary = match.iloc[0].to_dict() if len(match) else {}
+
+    return {
+        "fit": fit,
+        "x_cal": xfit,
+        "ratio_cal": ratio,
+        "qc_by_level": by_level,
+        "qc_samples": sample_detail,
+        "summary": summary,
     }
 
 
@@ -330,21 +397,48 @@ def pair_metric_matrix(result, metric="QC Mean |Bias| %"):
 
 
 def export_surrogate_workbook(result, path):
+    """Export compact summaries plus detailed QC rows without retaining all pairs in memory."""
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
         result["ranking"].to_excel(writer, sheet_name="Pair Ranking", index=False)
         result["stage1"].to_excel(writer, sheet_name="Stage 1 Analytes", index=False)
-        level_rows = []; sample_rows = []
-        for (analyte, is_name), d in result["detail"].items():
+
+        level_row = 0
+        sample_row = 0
+        level_header = True
+        sample_header = True
+
+        for _, rec in result["ranking"].iterrows():
+            analyte = str(rec["Analyte"])
+            is_name = str(rec["Internal Standard"])
+            try:
+                d = compute_pair_detail(result, analyte, is_name)
+            except Exception:
+                continue
+
             if not d["qc_by_level"].empty:
-                x = d["qc_by_level"].copy(); x.insert(0, "Internal Standard", is_name); x.insert(0, "Analyte", analyte)
-                level_rows.append(x)
+                x = d["qc_by_level"].copy()
+                x.insert(0, "Internal Standard", is_name)
+                x.insert(0, "Analyte", analyte)
+                x.to_excel(
+                    writer, sheet_name="QC By Level", index=False,
+                    header=level_header, startrow=level_row,
+                )
+                level_row += len(x) + (1 if level_header else 0)
+                level_header = False
+
             if not d["qc_samples"].empty:
-                x = d["qc_samples"].copy(); x.insert(0, "Internal Standard", is_name); x.insert(0, "Analyte", analyte)
-                sample_rows.append(x)
-        if level_rows: pd.concat(level_rows, ignore_index=True).to_excel(writer, sheet_name="QC By Level", index=False)
-        if sample_rows: pd.concat(sample_rows, ignore_index=True).to_excel(writer, sheet_name="QC Samples", index=False)
+                x = d["qc_samples"].copy()
+                x.insert(0, "Internal Standard", is_name)
+                x.insert(0, "Analyte", analyte)
+                x.to_excel(
+                    writer, sheet_name="QC Samples", index=False,
+                    header=sample_header, startrow=sample_row,
+                )
+                sample_row += len(x) + (1 if sample_header else 0)
+                sample_header = False
+
         criteria = result.get("criteria")
         if criteria is not None:
-            pd.DataFrame([{"Setting": k, "Value": v} for k, v in vars(criteria).items()]).to_excel(
-                writer, sheet_name="Criteria", index=False
-            )
+            pd.DataFrame(
+                [{"Setting": k, "Value": v} for k, v in vars(criteria).items()]
+            ).to_excel(writer, sheet_name="Criteria", index=False)
