@@ -17,6 +17,7 @@ from .surrogate_is import (
     SurrogateCriteria, load_surrogate_data, analyze_surrogate_is,
     pair_metric_matrix, export_surrogate_workbook,
 )
+from .ui_helpers import SortableTableItem, configure_sortable_table, make_table_filter_bar
 
 
 def _fmt(v):
@@ -94,6 +95,8 @@ def _build_tab(w):
     rank_page = QWidget(); rl = QVBoxLayout(rank_page)
     w.sis_ranking = QTableWidget(); w.sis_ranking.setSelectionBehavior(QTableWidget.SelectRows)
     w.sis_ranking.setSelectionMode(QTableWidget.SingleSelection)
+    configure_sortable_table(w.sis_ranking)
+    rl.addWidget(make_table_filter_bar(w.sis_ranking, rank_page))
     w.sis_ranking.itemSelectionChanged.connect(lambda: _selection_changed(w))
     rl.addWidget(w.sis_ranking); outtabs.addTab(rank_page, "Pair Ranking")
 
@@ -114,6 +117,8 @@ def _build_tab(w):
     outtabs.addTab(detail_page, "Pair Detail")
 
     stage_page = QWidget(); sl = QVBoxLayout(stage_page); w.sis_stage1 = QTableWidget()
+    configure_sortable_table(w.sis_stage1)
+    sl.addWidget(make_table_filter_bar(w.sis_stage1, stage_page))
     sl.addWidget(w.sis_stage1); outtabs.addTab(stage_page, "Stage 1")
     root.addWidget(outtabs, 1)
 
@@ -165,13 +170,31 @@ def _run(w):
 
 
 def _fill_table(table, df):
+    sorting = table.isSortingEnabled()
+    table.setSortingEnabled(False)
     table.clear(); table.setRowCount(len(df)); table.setColumnCount(len(df.columns))
     table.setHorizontalHeaderLabels([str(c) for c in df.columns])
     for r, (_, rec) in enumerate(df.iterrows()):
         for c, col in enumerate(df.columns):
-            item = QTableWidgetItem(_fmt(rec[col])); item.setFlags(item.flags() & ~Qt.ItemIsEditable); table.setItem(r, c, item)
+            value = rec[col]
+            sort_value = None
+            if isinstance(value, (bool, np.bool_)):
+                sort_value = int(bool(value))
+            elif isinstance(value, (int, float, np.integer, np.floating)):
+                try:
+                    if np.isfinite(value): sort_value = float(value)
+                except Exception:
+                    pass
+            item = SortableTableItem(_fmt(value), sort_value=sort_value)
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+            table.setItem(r, c, item)
     table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
     table.horizontalHeader().setStretchLastSection(True)
+    if hasattr(table, "_refresh_filter_columns"):
+        table._refresh_filter_columns()
+    table.setSortingEnabled(sorting)
+    if hasattr(table, "_apply_filter"):
+        table._apply_filter()
 
 
 def _draw_heatmap(w):
