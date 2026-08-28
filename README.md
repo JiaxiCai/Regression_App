@@ -79,3 +79,11 @@ This is research software and has not been validated for clinical use. Clinical-
 - Added a Weighting Definitions dialog.
 - Appends the selected model's weighting objective and variance assumptions to How Calculated.
 - No numerical regression behavior changed in this release.
+
+## Desktop builds
+
+The repository's **Build desktop apps** GitHub Actions workflow produces collaborator-ready Windows and macOS artifacts. Current builds use Python 3.14, reconstruct the verified direct application source before packaging, and run packaged-app self-tests before artifacts are uploaded.
+
+For Windows, download the `RegressionApp-Windows` artifact, extract the outer artifact ZIP and then `RegressionApp-Windows.zip`, and run `RegressionApp.exe` from the complete extracted `RegressionApp` folder.
+
+Local builders cache the virtual environment, dependency state, and PyInstaller analysis data so repeat builds avoid unnecessary dependency resolution and full analysis rebuilds.
