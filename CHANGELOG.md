@@ -2,6 +2,14 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.3] - 2026-08-27
+
+### Surrogate IS scalability
+- Bulk surrogate-IS analysis now stores only compact pair summary metrics instead of full fit objects and QC sample DataFrames for every analyte × IS pair.
+- Pair Detail is reconstructed on demand only for the currently selected analyte/IS combination.
+- Workbook export regenerates detailed QC rows one pair at a time and writes them incrementally, avoiding a large in-memory concatenation.
+- Retains the same calibration-range, fit, QC bias, and QC precision criteria while substantially reducing memory growth for large pair matrices.
+
 ## [0.5.2] - 2026-08-27
 
 ### Packaging cache reliability
