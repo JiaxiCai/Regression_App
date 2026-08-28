@@ -2,6 +2,17 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.5] - 2026-08-27
+
+### Surrogate IS performance and safer auto-mapping
+- Linear regression back-calculation is now vectorized algebraically instead of invoking the generic polynomial root solver for each value.
+- This substantially reduces CPU cost for large surrogate-IS pair matrices and other linear-model workflows.
+- Generic long-format component mapping now defaults Quantifiers to Analyte, Internal Standards to IS, and Qualifiers to Ignore.
+- Automatically ignored qualifier transitions remain visible in Component Mapping and can be enabled manually.
+- Components mapped to Ignore start excluded from the current benchmark.
+- Added a confirmation warning before running more than 2,000 analyte × IS pairs.
+- Verified the computational shape of `20260110_Round4_Input.csv`: 75 quantifiers, 84 qualifiers, 68 internal standards; the safer default is 75 × 68 = 5,100 pairs rather than 159 × 68 = 10,812.
+
 ## [0.5.4] - 2026-08-27
 
 ### Surrogate IS component mapping and pair selection
