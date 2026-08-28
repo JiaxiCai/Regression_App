@@ -16,15 +16,28 @@ def candidate_replicate_rows(df, analyte):
     x["Nominal"] = _num(x.get("Std. Conc", pd.Series(index=x.index, dtype=object)))
     x["Response_numeric"] = _num(x.get("Response", pd.Series(index=x.index, dtype=object)))
     x["Injection"] = _num(x.get("#", pd.Series(index=x.index, dtype=object)))
-    sample = x.get("Sample Text", pd.Series("", index=x.index)).astype(str)
-    looks_cal = sample.str.contains(_CAL_RE, na=False)
-    x = x[
-        looks_cal
-        & np.isfinite(x["Nominal"])
+
+    valid = (
+        np.isfinite(x["Nominal"])
         & (x["Nominal"] > 0)
         & np.isfinite(x["Response_numeric"])
         & np.isfinite(x["Injection"])
-    ].copy()
+    )
+
+    sample = x.get("Sample Text", pd.Series("", index=x.index)).astype(str)
+    looks_cal = sample.str.contains(_CAL_RE, na=False)
+
+    # Preferred mode: explicit Cal labels in Sample Text.
+    if (valid & looks_cal).any():
+        x = x[valid & looks_cal].copy()
+        x["Detection Mode"] = "Explicit Cal label"
+        return x.sort_values("Injection").reset_index(drop=True)
+
+    # Fallback mode for studies exported as QC/non-calibrator rows: retain all
+    # valid nominal-response rows here; infer_replicate_sets() will identify
+    # the repeated full-length ladder family by injection order.
+    x = x[valid].copy()
+    x["Detection Mode"] = "Repeated ladder"
     return x.sort_values("Injection").reset_index(drop=True)
 
 def infer_replicate_sets(df, analyte):
@@ -43,6 +56,30 @@ def infer_replicate_sets(df, analyte):
         seen.add(nominal)
         previous = nominal
     rows["Replicate Set"] = set_ids
+
+    # If no explicit Cal labels were available, the valid rows can contain
+    # shorter QC ladders interleaved with the intended rotation ladders.
+    # Keep the repeated family with the largest number of unique nominal
+    # levels. Example: a 16x6 study with six 16-level ladders interspersed
+    # with 9-level QC sequences should yield six rotation sets, not thirteen.
+    if (
+        "Detection Mode" in rows.columns
+        and not rows.empty
+        and rows["Detection Mode"].eq("Repeated ladder").all()
+    ):
+        preliminary = (
+            rows.groupby("Replicate Set", as_index=False)
+            .agg(levels=("Nominal", "nunique"), n=("Nominal", "size"))
+        )
+        max_levels = int(preliminary["levels"].max())
+        keep_sets = preliminary.loc[
+            preliminary["levels"] == max_levels, "Replicate Set"
+        ].tolist()
+        if len(keep_sets) >= 2:
+            rows = rows[rows["Replicate Set"].isin(keep_sets)].copy()
+            remap = {old: new for new, old in enumerate(sorted(keep_sets), start=1)}
+            rows["Replicate Set"] = rows["Replicate Set"].map(remap)
+
     rows["Replicate Label"] = rows["Replicate Set"].map(lambda i: f"Set {i}")
     levels = sorted(rows["Nominal"].dropna().unique())
     level_map = {v: i + 1 for i, v in enumerate(levels)}
