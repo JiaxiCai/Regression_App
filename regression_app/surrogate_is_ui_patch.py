@@ -15,7 +15,7 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 
 from .surrogate_is import (
     SurrogateCriteria, load_surrogate_data, analyze_surrogate_is,
-    pair_metric_matrix, export_surrogate_workbook,
+    pair_metric_matrix, compute_pair_detail, export_surrogate_workbook,
 )
 from .ui_helpers import SortableTableItem, configure_sortable_table, make_table_filter_bar
 
@@ -234,8 +234,11 @@ def _selected_pair(w):
 def _selection_changed(w):
     pair = _selected_pair(w)
     if pair is None: return
-    detail = w.sis_result["detail"].get(pair)
-    if not detail: return
+    try:
+        detail = compute_pair_detail(w.sis_result, pair[0], pair[1])
+    except Exception as exc:
+        w.sis_detail_label.setText(f"Could not build pair detail: {exc}")
+        return
     s = detail["summary"]
     w.sis_detail_label.setText(
         f"{pair[0]} / {pair[1]} — {'PASS' if s['Pass'] else 'FAIL'}; "
