@@ -2,6 +2,15 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.4.15] - 2026-08-27
+
+### Windows rebuild reliability
+- Windows builder now terminates any running `RegressionApp.exe` before replacing the packaged output.
+- Retries deletion of the previous `dist` directory to allow Windows file handles and antivirus/indexing processes to release DLLs.
+- If the old output remains locked, the build automatically switches to a fresh versioned `dist-v0.4.15-<id>` directory instead of failing.
+- PyInstaller's `build` analysis cache is still preserved for faster incremental rebuilds.
+- The final self-test, ZIP creation, and Explorer launch follow whichever output directory was actually used.
+
 ## [0.4.14] - 2026-08-27
 
 ### Direct-source packaging and build efficiency
