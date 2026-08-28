@@ -1,10 +1,12 @@
-# Generated loader for Regression App v0.4.10.
+# Generated loader for Regression App v0.4.11.
 # The release GUI source is embedded across small chunk modules for reliable connector sync.
 import base64 as _b64, zlib as _zlib
 from importlib import import_module as _import_module
 
 _parts = []
-for _i in range(6):
+# app_chunk_05 is the stale tail from the older compressed GUI payload.
+# The current payload reuses chunks 00-04 and continues with 06-08.
+for _i in (0, 1, 2, 3, 4, 6, 7, 8):
     _m = _import_module(f".app_chunk_{_i:02d}", __package__)
     _parts.append(_m.CHUNK)
 
