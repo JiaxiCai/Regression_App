@@ -2,6 +2,19 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.0] - 2026-08-27
+
+### Surrogate Internal Standard Analysis
+- Added a new Surrogate IS Analysis workspace for systematic analyte × internal-standard benchmarking.
+- Supports Waters TargetLynx compound-summary reports and the generic long-format data structure used by the original surrogate-IS scripts.
+- Stage 1 performs analyte-only contiguous calibration-range selection using the app's existing regression engine and conventional statistical weighting definitions.
+- Stage 2 evaluates every analyte/IS area-ratio calibration on the Stage 1 concentration levels.
+- Independent QC samples are back-calculated for each pair and summarized by mean absolute bias, maximum absolute bias, and maximum CV.
+- Added configurable acceptance criteria for calibrator bias, Fit R², QC bias, QC individual bias, QC CV, and minimum calibrator count.
+- Added Pair Ranking, analyte × IS heatmap, Pair Detail, Stage 1 diagnostics, and Excel export.
+- Pair ranking exposes underlying metrics rather than using an opaque composite score.
+- Default model is Linear 1/x with contiguous-range selection; Linear and Linear 1/x² are also available.
+
 ## [0.4.18] - 2026-08-27
 
 ### Version display consistency
