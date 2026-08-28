@@ -1,4 +1,4 @@
-# Generated loader for Regression App v0.4.7.
+# Generated loader for Regression App v0.4.9.
 # The release GUI source is embedded across small chunk modules for reliable connector sync.
 import base64 as _b64, zlib as _zlib
 from importlib import import_module as _import_module
@@ -16,3 +16,6 @@ _install_weighting_ui(MainWindow)
 
 from .calibration_plot_patch import install as _install_calibration_plot_ui
 _install_calibration_plot_ui(MainWindow)
+
+from .amr_ui_patch import install as _install_amr_validation_ui
+_install_amr_validation_ui(MainWindow)
