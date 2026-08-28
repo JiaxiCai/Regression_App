@@ -218,7 +218,15 @@ def fit_polynomial(x, y, degree=1, weight_mode="none", name=None,
         coeff = np.polyfit(x_fit, y_fit, degree, w=np.sqrt(w_fit))
     predict = lambda xx: np.polyval(coeff, np.asarray(xx, float))
     yhat = predict(x)
-    invert = lambda yy: _poly_invert(coeff, np.asarray(yy, float), x)
+    if degree == 1:
+        slope, intercept = coeff
+        invert = lambda yy: (
+            (np.asarray(yy, float) - intercept) / slope
+            if np.isfinite(slope) and abs(slope) > np.finfo(float).eps
+            else np.full_like(np.asarray(yy, float), np.nan, dtype=float)
+        )
+    else:
+        invert = lambda yy: _poly_invert(coeff, np.asarray(yy, float), x)
     backcalc = invert(y)
     bias = _bias(backcalc, x)
     pass_mask = np.isfinite(bias) & (np.abs(bias) <= bias_limit)
