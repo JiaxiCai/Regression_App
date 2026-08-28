@@ -2,6 +2,15 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.4.10] - 2026-08-27
+
+### Fixed — Windows/macOS startup zlib error
+- Fixed `zlib.error: incorrect data check` during packaged startup/self-test.
+- Restored the generated GUI loader to the original complete compressed payload in `app_chunk_00` through `app_chunk_05`.
+- Chunks 06–08 were from a later incompatible re-chunking attempt and must not be concatenated with the original payload.
+- Newer features remain loaded through normal patch modules after the base GUI is reconstructed.
+- GitHub Actions packaging retains explicit module discovery and packaged-app self-tests.
+
 ## [0.4.9] - 2026-08-27
 
 ### Replicate Studies — unlabeled ladder inference
