@@ -45,7 +45,6 @@ def install(MainWindow):
         self.repstudy_rows = None
         self.repstudy_results = None
         self.repstudy_path = None
-        self.setWindowTitle("Regression App v0.4.1")
         _build_tab(self)
     MainWindow.__init__ = wrapped_init
 
