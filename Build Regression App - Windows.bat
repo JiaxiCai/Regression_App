@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ==========================================
-echo  Regression App v0.4.16 - Windows Builder
+echo  Regression App v0.4.17 - Windows Builder
 echo ==========================================
 echo.
 
@@ -130,13 +130,13 @@ python -m PyInstaller --noconfirm --windowed --onedir --name "RegressionApp" --p
 if errorlevel 1 goto :build_fail
 
 echo [3/5] Validating packaged application...
-if not exist "!DIST_DIR!\RegressionApp\RegressionApp.exe" goto :build_fail
-set "PYDLL="
-for /r "!DIST_DIR!\RegressionApp" %%F in (python*.dll) do if not defined PYDLL set "PYDLL=%%F"
-if not defined PYDLL (
-    echo ERROR: bundled Python DLL is missing.
+if not exist "!DIST_DIR!\RegressionApp\RegressionApp.exe" (
+    echo ERROR: RegressionApp.exe was not created.
     goto :build_fail
 )
+REM The packaged executable self-test is the authoritative runtime check.
+REM If it launches and imports the app successfully, its bundled Python runtime
+REM and dependent DLLs are present and loadable.
 "!DIST_DIR!\RegressionApp\RegressionApp.exe" --self-test
 if errorlevel 1 (
     echo ERROR: packaged application self-test failed.
