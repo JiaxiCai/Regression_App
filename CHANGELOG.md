@@ -2,6 +2,18 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.7] - 2026-08-29
+
+### Surrogate IS user-defined AMR and calibrator editing
+- Added optional user-defined AMR import from CSV/Excel using analyte/component, LLOQ, and ULOQ columns with flexible header recognition.
+- User-defined AMRs override automatic Stage-1 AMR discovery only for matching analytes; unmatched analytes continue to use automatic AMR selection.
+- Pair Ranking and Pair Detail now report AMR Source as Automatic, User-defined, or Manual edited.
+- Added an individual calibrator table to Pair Detail with nominal concentration, analyte/IS ratio, back-calculated concentration, signed bias, and absolute bias.
+- Added pair-specific calibrator Include controls; unchecking a calibrator immediately refits that analyte × IS pair and refreshes calibration/QC metrics.
+- Manual exclusions never change the AMR or calibrator set used by other IS candidates for the same analyte.
+- Prevents manual editing below the configured minimum calibrator count.
+- Excluded calibrators remain visible in the Pair Detail table and plot for auditability.
+
 ## [0.5.6] - 2026-08-29
 
 ### Surrogate IS QC sample mapping and individual bias drill-down
