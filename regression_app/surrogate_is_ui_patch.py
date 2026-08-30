@@ -181,6 +181,15 @@ def _build_tab(w):
     outtabs.addTab(qcmap_page, "QC Sample Mapping")
 
     rank_page = QWidget(); rl = QVBoxLayout(rank_page)
+    rank_controls = QHBoxLayout()
+    rank_controls.addWidget(QLabel("Show analyte"))
+    w.sis_rank_analyte = QComboBox()
+    w.sis_rank_analyte.currentTextChanged.connect(lambda _: _refresh_ranking_view(w))
+    rank_controls.addWidget(w.sis_rank_analyte)
+    rank_controls.addStretch()
+    w.sis_rank_count = QLabel("")
+    rank_controls.addWidget(w.sis_rank_count)
+    rl.addLayout(rank_controls)
     w.sis_ranking = QTableWidget(); w.sis_ranking.setSelectionBehavior(QTableWidget.SelectRows)
     w.sis_ranking.setSelectionMode(QTableWidget.SingleSelection)
     configure_sortable_table(w.sis_ranking)
@@ -511,6 +520,41 @@ def _set_all_qc_included(w, included):
     _update_qc_mapping_summary(w)
 
 
+def _refresh_ranking_view(w, preferred_pair=None):
+    if not w.sis_result:
+        return
+    rank = w.sis_result.get("ranking")
+    if rank is None:
+        return
+
+    selected = w.sis_rank_analyte.currentText() if hasattr(w, "sis_rank_analyte") else ""
+    view = rank
+    if selected:
+        view = rank[rank["Analyte"].astype(str).eq(selected)]
+
+    _fill_table(w.sis_ranking, view.reset_index(drop=True))
+    if hasattr(w, "sis_rank_count"):
+        w.sis_rank_count.setText(f"{len(view):,} displayed / {len(rank):,} total pair(s)")
+
+    target = preferred_pair
+    if target is None and len(view):
+        target = (str(view.iloc[0]["Analyte"]), str(view.iloc[0]["Internal Standard"]))
+
+    if target and w.sis_ranking.rowCount():
+        headers = {
+            w.sis_ranking.horizontalHeaderItem(c).text(): c
+            for c in range(w.sis_ranking.columnCount())
+            if w.sis_ranking.horizontalHeaderItem(c) is not None
+        }
+        ac = headers.get("Analyte"); ic = headers.get("Internal Standard")
+        if ac is not None and ic is not None:
+            for r in range(w.sis_ranking.rowCount()):
+                ai = w.sis_ranking.item(r, ac); ii = w.sis_ranking.item(r, ic)
+                if ai and ii and ai.text() == target[0] and ii.text() == target[1]:
+                    w.sis_ranking.selectRow(r)
+                    break
+
+
 def _run(w):
     if w.sis_data is None:
         QMessageBox.information(w, "No dataset", "Load a surrogate-IS dataset first."); return
@@ -543,11 +587,17 @@ def _run(w):
             w.sis_data, _criteria(w), component_mapping=mapping,
             qc_sample_mapping=qc_mapping, user_amr=w.sis_user_amr
         ); rank = w.sis_result["ranking"]
-        _fill_table(w.sis_ranking, rank); _fill_table(w.sis_stage1, w.sis_result["stage1"])
+        w.sis_rank_analyte.blockSignals(True)
+        w.sis_rank_analyte.clear()
+        analytes = sorted(rank["Analyte"].astype(str).unique().tolist()) if not rank.empty else []
+        w.sis_rank_analyte.addItems(analytes)
+        w.sis_rank_analyte.blockSignals(False)
+        _refresh_ranking_view(w)
+        _fill_table(w.sis_stage1, w.sis_result["stage1"])
         passed = int(rank["Pass"].sum()) if not rank.empty else 0
         w.sis_note.setText(f"Evaluated {len(rank)} analyte–IS pairs; {passed} met all current calibration and QC criteria.")
         _draw_heatmap(w)
-        if len(rank): w.sis_ranking.selectRow(0); _selection_changed(w)
+        if len(rank) and w.sis_ranking.rowCount(): w.sis_ranking.selectRow(0); _selection_changed(w)
     except Exception as exc:
         QMessageBox.critical(w, "Surrogate IS analysis failed", str(exc))
 
@@ -676,7 +726,7 @@ def _sync_amr_to_surrogates(w):
 
     try:
         result = sync_pair_amr_to_surrogates(w.sis_result, pair[0], pair[1])
-        _fill_table(w.sis_ranking, w.sis_result["ranking"])
+        _refresh_ranking_view(w, preferred_pair=pair)
         _draw_heatmap(w)
 
         detail = compute_pair_detail(w.sis_result, pair[0], pair[1])
@@ -705,19 +755,7 @@ def _sync_amr_to_surrogates(w):
 
 def _refresh_selected_pair(w, pair, detail, refresh_ranking=False):
     if refresh_ranking:
-        _fill_table(w.sis_ranking, w.sis_result["ranking"])
-        headers = {
-            w.sis_ranking.horizontalHeaderItem(c).text(): c
-            for c in range(w.sis_ranking.columnCount())
-            if w.sis_ranking.horizontalHeaderItem(c) is not None
-        }
-        ac = headers.get("Analyte"); ic = headers.get("Internal Standard")
-        if ac is not None and ic is not None:
-            for r in range(w.sis_ranking.rowCount()):
-                ai = w.sis_ranking.item(r, ac); ii = w.sis_ranking.item(r, ic)
-                if ai and ii and ai.text() == pair[0] and ii.text() == pair[1]:
-                    w.sis_ranking.selectRow(r)
-                    break
+        _refresh_ranking_view(w, preferred_pair=pair)
 
     s = detail["summary"]
     _fill_calibrator_table(w, detail.get("calibrators", []))
