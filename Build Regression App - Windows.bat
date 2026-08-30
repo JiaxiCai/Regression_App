@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ==========================================
-echo  Regression App v0.5.6 - Windows Builder
+echo  Regression App v0.5.7 - Windows Builder
 echo ==========================================
 echo.
 
@@ -119,7 +119,7 @@ if exist "!DIST_DIR!" (
     )
 )
 if exist "!DIST_DIR!" (
-    set "DIST_DIR=dist-v0.5.6-!RANDOM!"
+    set "DIST_DIR=dist-v0.5.7-!RANDOM!"
     echo Previous dist folder is still locked; using !DIST_DIR! instead.
 )
 
@@ -159,7 +159,7 @@ if errorlevel 1 (
 
 echo [4/5] Creating collaborator-ready ZIP...
 > "!DIST_DIR!\README-WINDOWS.txt" (
-    echo Regression App v0.5.6 - Windows
+    echo Regression App v0.5.7 - Windows
     echo.
     echo 1. Extract RegressionApp-Windows.zip completely.
     echo 2. Open the extracted RegressionApp folder.
