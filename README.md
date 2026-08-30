@@ -1,4 +1,4 @@
-# Regression App v0.5.27
+# Regression App v0.5.28
 
 A cross-platform PySide6 desktop workbench for analytical and clinical laboratory data analysis, with emphasis on calibration, method validation, LC-MS/MS workflows, and transparent statistical reporting.
 
@@ -78,6 +78,7 @@ Systematic analyte × internal-standard benchmarking for LC-MS/MS workflows.
 - Exhaustive contiguous pair search evaluates all contiguous candidate windows and uses calibration + QC performance to select the best working range; legacy greedy search remains available
 - Surrogate heatmaps can be ordered by retention time (default) or alphabetically; analyte and IS axes are sorted independently by median calibrator RT
 - Heatmaps can optionally grey out failed analyte–IS pairs while retaining metric values and annotations
+- Missing heatmap metric cells are shown in grey rather than blank; optional annotations label them N/A
 - Heatmap controls are arranged beside the plot for a larger plotting area
 - Matched SIL-IS reference uses one canonical own-SIL curve per analyte; the own-SIL pair therefore has zero bias versus its own matched-SIL reference while retaining its measured QC precision
 - Matched SIL reference range can either allow extrapolation (default) or restrict bias evaluation to the matched SIL-IS AMR overlap
