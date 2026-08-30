@@ -2,6 +2,15 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.24] - 2026-08-30
+
+### Retention-time ordered surrogate heatmaps
+- Heatmap rows (analytes) and columns (internal standards) now default to independent ascending retention-time order.
+- Ordering uses the median calibrator RT retained from the input data.
+- Components without a finite RT are placed after RT-resolved components and ordered alphabetically.
+- Added a heatmap Order selector with `Retention time` and `Alphabetical` options.
+- Saved Surrogate IS projects now preserve the selected heatmap ordering mode.
+
 ## [0.5.23] - 2026-08-30
 
 ### Exhaustive contiguous surrogate-curve search
