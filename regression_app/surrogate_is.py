@@ -775,6 +775,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
 
         matched_sil = _matched_sil_name(is_meta, analyte)
         matched_sil_fit = None
+        matched_sil_iter = None
         if matched_sil and str(matched_sil) in cal_area_np:
             xa_sil = cal_nom_np[str(analyte)]
             aa_sil = cal_area_np[str(analyte)]
@@ -784,16 +785,42 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                 & (xa_sil > 0) & (ia_sil > 0) & np.isin(xa_sil, levels)
             )
             if int(sil_valid.sum()) >= analyte_criteria.min_calibrators:
+                sil_x = xa_sil[sil_valid]
+                sil_ratio = aa_sil[sil_valid] / ia_sil[sil_valid]
+
+                # Select the matched-SIL reference curve once per analyte.
+                # Its own QC performance is assessed against nominal
+                # concentration for range selection; once selected, its
+                # calculated QC concentrations become the reference values
+                # for every surrogate pair.
+                sil_qratio = sil_qnom = sil_qref = None
+                if (
+                    str(analyte) in qc_area_np
+                    and str(matched_sil) in qc_area_np
+                    and str(analyte) in qc_nom_np
+                ):
+                    qa_ref = qc_area_np[str(analyte)]
+                    qi_ref = qc_area_np[str(matched_sil)]
+                    qn_ref = qc_nom_np[str(analyte)]
+                    qv_ref = (
+                        np.isfinite(qa_ref) & np.isfinite(qi_ref) & np.isfinite(qn_ref)
+                        & (qi_ref > 0) & (qn_ref > 0)
+                    )
+                    sil_qratio = qa_ref[qv_ref] / qi_ref[qv_ref]
+                    sil_qnom = qn_ref[qv_ref]
+                    sil_qref = sil_qnom.copy()
+
                 if pair_search_mode == "Exhaustive contiguous":
-                    sil_iter = _fit_pair_contiguous_search(
-                        xa_sil[sil_valid], aa_sil[sil_valid] / ia_sil[sil_valid], analyte_criteria
+                    matched_sil_iter = _fit_pair_contiguous_search(
+                        sil_x, sil_ratio, analyte_criteria,
+                        qc_ratio=sil_qratio, qc_nominal=sil_qnom, qc_reference=sil_qref,
                     )
                 else:
-                    sil_iter = _fit_pair_iterative(
-                        xa_sil[sil_valid], aa_sil[sil_valid] / ia_sil[sil_valid], analyte_criteria
+                    matched_sil_iter = _fit_pair_iterative(
+                        sil_x, sil_ratio, analyte_criteria
                     )
-                if sil_iter is not None:
-                    matched_sil_fit = sil_iter["metrics"]
+                if matched_sil_iter is not None:
+                    matched_sil_fit = matched_sil_iter["metrics"]
 
         for is_name in is_names:
             if is_name not in cal_area.columns: continue
@@ -829,7 +856,16 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                     else:
                         qref_all = np.full_like(qnom_all, np.nan, dtype=float)
 
-            if pair_search_mode == "Exhaustive contiguous":
+            if (
+                analyte_criteria.qc_reference_basis == "Matched SIL-IS calculated concentration"
+                and matched_sil_iter is not None
+                and str(is_name) == str(matched_sil)
+            ):
+                # Reuse the exact reference fit for the analyte's own SIL-IS
+                # pair. This guarantees that own-SIL calculated concentration
+                # and matched-SIL reference concentration are identical.
+                iterative = matched_sil_iter
+            elif pair_search_mode == "Exhaustive contiguous":
                 iterative = _fit_pair_contiguous_search(
                     xstart, rstart, analyte_criteria,
                     qc_ratio=qratio_all, qc_nominal=qnom_all, qc_reference=qref_all,
@@ -857,7 +893,17 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                 qref = qnom.copy()
                 reference_basis = "Nominal concentration"
                 if criteria.qc_reference_basis == "Matched SIL-IS calculated concentration":
-                    if matched_sil_fit is not None and matched_sil in qc_area.columns:
+                    if (
+                        matched_sil_fit is not None
+                        and matched_sil in qc_area.columns
+                        and str(is_name) == str(matched_sil)
+                    ):
+                        # The own SIL-IS pair defines the matched-SIL reference.
+                        # Reusing qcalc avoids comparing two independently
+                        # selected/fitted versions of the same reference curve.
+                        qref = qcalc.copy()
+                        reference_basis = "Matched SIL-IS calculated concentration"
+                    elif matched_sil_fit is not None and matched_sil in qc_area.columns:
                         qsil = qc_area_np[str(matched_sil)]
                         sil_valid_values = qsil[qvalid]
                         qa_values = qa[qvalid]
