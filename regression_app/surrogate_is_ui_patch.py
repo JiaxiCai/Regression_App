@@ -186,18 +186,26 @@ def _build_tab(w):
     detail_page = QWidget(); dl = QVBoxLayout(detail_page)
     w.sis_detail_label = QLabel("Select a pair from Pair Ranking."); w.sis_detail_label.setWordWrap(True)
     dl.addWidget(w.sis_detail_label)
-    w.sis_detail_fig = Figure(figsize=(10, 5), dpi=100); w.sis_detail_canvas = FigureCanvas(w.sis_detail_fig)
-    dl.addWidget(NavigationToolbar(w.sis_detail_canvas, detail_page)); dl.addWidget(w.sis_detail_canvas, 1)
+    detail_split = QHBoxLayout()
+    plot_panel = QWidget(); ppl = QVBoxLayout(plot_panel)
+    w.sis_detail_fig = Figure(figsize=(7, 6), dpi=100); w.sis_detail_canvas = FigureCanvas(w.sis_detail_fig)
+    ppl.addWidget(NavigationToolbar(w.sis_detail_canvas, plot_panel))
+    ppl.addWidget(w.sis_detail_canvas, 1)
+
+    table_panel = QWidget(); tpl = QVBoxLayout(table_panel)
     cal_label = QLabel(
         "Calibrators — uncheck Use to exclude that concentration for this pair and refit. "
         "Manual edits are pair-specific and are labeled as Manual edited."
     )
-    cal_label.setWordWrap(True); dl.addWidget(cal_label)
+    cal_label.setWordWrap(True); tpl.addWidget(cal_label)
     w.sis_cal_detail = QTableWidget()
     configure_sortable_table(w.sis_cal_detail)
-    w.sis_cal_detail.setMaximumHeight(240)
     w.sis_cal_detail.itemChanged.connect(lambda item: _calibrator_use_changed(w, item))
-    dl.addWidget(w.sis_cal_detail)
+    tpl.addWidget(w.sis_cal_detail, 1)
+
+    detail_split.addWidget(plot_panel, 3)
+    detail_split.addWidget(table_panel, 2)
+    dl.addLayout(detail_split, 1)
     outtabs.addTab(detail_page, "Pair Detail")
 
     qc_detail_page = QWidget(); qdl = QVBoxLayout(qc_detail_page)
