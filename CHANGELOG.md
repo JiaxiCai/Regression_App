@@ -2,6 +2,18 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.17] - 2026-08-29
+
+### TargetLynx Primary Flags calibrator-source mode
+- Preserves the TargetLynx `Primary Flags` field during surrogate-data normalization.
+- Added a Calibrator Source selector with `Stage 1` and `TargetLynx Primary Flags` modes.
+- In TargetLynx Primary Flags mode, Stage 1 candidate-range selection is bypassed.
+- For each analyte, calibrators marked with `X` or lowercase `l` in Primary Flags are treated as excluded; the remaining analyte calibrator levels become the common starting set for all analyte × IS pair fits.
+- Iterative Stage 2 fitting still operates from that TargetLynx-defined starting set and can remove additional worst-bias levels as required by the configured calibration criteria.
+- Pair Detail continues to expose excluded/unused calibrators for manual re-inclusion or removal.
+- Generic long-format imports also preserve Primary Flag/Primary Flags columns when present.
+- The load summary reports how many rows contain TargetLynx X/l Primary Flags.
+
 ## [0.5.16] - 2026-08-29
 
 ### Pair Ranking column customization
