@@ -416,6 +416,35 @@ def select_stage1_levels(x, y, criteria):
     return levels, best
 
 
+def _qc_metrics(calc, reference):
+    """Lightweight QC metrics for bulk pair screening without per-pair DataFrames."""
+    calc = np.asarray(calc, float)
+    ref = np.asarray(reference, float)
+    valid = np.isfinite(calc) & np.isfinite(ref) & (ref > 0)
+    if not valid.any():
+        return {}
+    calc = calc[valid]; ref = ref[valid]
+    bias = (calc - ref) / ref * 100.0
+    levels = np.unique(ref)
+    max_cv = np.nan
+    cvs = []
+    for level in levels:
+        vals = calc[ref == level]
+        if len(vals) > 1:
+            mean = float(np.mean(vals))
+            if np.isfinite(mean) and mean != 0:
+                cvs.append(float(np.std(vals, ddof=1) / mean * 100.0))
+    if cvs:
+        max_cv = float(np.nanmax(cvs))
+    return {
+        "qc_n": int(len(calc)),
+        "qc_levels": int(len(levels)),
+        "qc_mean_abs_bias_pct": float(np.mean(np.abs(bias))),
+        "qc_max_abs_bias_pct": float(np.max(np.abs(bias))),
+        "qc_max_cv_pct": max_cv,
+    }
+
+
 def _qc_summary(calc, nominal):
     d = pd.DataFrame({"calc": calc, "nominal": nominal}).replace([np.inf, -np.inf], np.nan).dropna()
     d = d[d["nominal"] > 0]
@@ -481,6 +510,14 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
     if not is_names: raise ValueError("No internal-standard components were detected.")
     groups = _group_lookup(data)
     amr_lookup = user_amr_lookup(user_amr)
+
+    # Convert wide numeric tables once. Repeated pandas coercion inside thousands
+    # of analyte × IS loops creates substantial temporary-object churn.
+    cal_area_np = {str(c): _num(cal_area[c]).to_numpy(float) for c in cal_area.columns}
+    qc_area_np = {str(c): _num(qc_area[c]).to_numpy(float) for c in qc_area.columns}
+    cal_nom_np = {str(c): _num(cal_nom[c]).to_numpy(float) for c in cal_nom.columns}
+    qc_nom_np = {str(c): _num(qc_nom[c]).to_numpy(float) for c in qc_nom.columns}
+    cal_rt_np = {str(c): _num(cal_rt[c]).to_numpy(float) for c in cal_rt.columns} if not cal_rt.empty else {}
     is_meta = (
         data.loc[data["Component Role"] == "IS", ["Component", "IS Class", "Paired Analyte"]]
         .drop_duplicates("Component").set_index("Component")
@@ -521,12 +558,12 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
 
         for is_name in is_names:
             if is_name not in cal_area.columns: continue
-            idx = cal_area.index.intersection(cal_nom.index)
-            xa = _num(cal_nom.loc[idx, analyte]); aa = _num(cal_area.loc[idx, analyte])
-            ia = _num(cal_area.loc[idx, is_name])
-            valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & xa.isin(levels)
+            xa = cal_nom_np[str(analyte)]
+            aa = cal_area_np[str(analyte)]
+            ia = cal_area_np[str(is_name)]
+            valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & np.isin(xa, levels)
             if int(valid.sum()) < criteria.min_calibrators: continue
-            xfit = xa[valid].to_numpy(float); ratio = (aa[valid] / ia[valid]).to_numpy(float)
+            xfit = xa[valid]; ratio = aa[valid] / ia[valid]
             m = _fit_candidate(xfit, ratio, criteria)
             if m is None: continue
             fit = m["fit"]
@@ -534,27 +571,28 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
 
             qidx = qc_area.index.intersection(qc_nom.index)
             if analyte in qc_area.columns and is_name in qc_area.columns and analyte in qc_nom.columns:
-                qa = _num(qc_area.loc[qidx, analyte]); qi = _num(qc_area.loc[qidx, is_name])
-                qn = _num(qc_nom.loc[qidx, analyte])
+                qa = qc_area_np[str(analyte)]
+                qi = qc_area_np[str(is_name)]
+                qn = qc_nom_np[str(analyte)]
                 qvalid = np.isfinite(qa) & np.isfinite(qi) & np.isfinite(qn) & (qi > 0) & (qn >= m["lloq"]) & (qn <= m["uloq"])
-                qratio = (qa[qvalid] / qi[qvalid]).to_numpy(float)
-                qnom = qn[qvalid].to_numpy(float); qcalc = fit.invert(qratio)
+                qratio = qa[qvalid] / qi[qvalid]
+                qnom = qn[qvalid]; qcalc = fit.invert(qratio)
                 qref = qnom.copy()
                 reference_basis = "Nominal concentration"
                 if criteria.qc_reference_basis == "Matched SIL-IS calculated concentration":
                     if matched_sil_fit is not None and matched_sil in qc_area.columns:
-                        qsil = _num(qc_area.loc[qidx, matched_sil])
-                        sil_valid_values = qsil[qvalid].to_numpy(float)
-                        qa_values = qa[qvalid].to_numpy(float)
+                        qsil = qc_area_np[str(matched_sil)]
+                        sil_valid_values = qsil[qvalid]
+                        qa_values = qa[qvalid]
                         sil_ratio = qa_values / sil_valid_values
                         qref = matched_sil_fit["fit"].invert(sil_ratio)
                         reference_basis = "Matched SIL-IS calculated concentration"
                     else:
                         qref = np.full_like(qnom, np.nan, dtype=float)
                         reference_basis = "Matched SIL-IS unavailable"
-                by_level, qs = _qc_summary(qcalc, qref)
+                qs = _qc_metrics(qcalc, qref)
             else:
-                by_level, qs = pd.DataFrame(), {}
+                qs = {}
 
             qc_pass = bool(qs) and (
                 np.isfinite(qs.get("qc_mean_abs_bias_pct", np.nan))
@@ -566,12 +604,11 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
             is_class = str(is_meta.loc[is_name, "IS Class"]) if len(is_meta) and is_name in is_meta.index else "Surrogate"
             paired_analyte = str(is_meta.loc[is_name, "Paired Analyte"]) if len(is_meta) and is_name in is_meta.index else ""
             rt_delta = np.nan
-            if not cal_rt.empty and analyte in cal_rt.columns and is_name in cal_rt.columns:
-                ridx = cal_rt.index.intersection(cal_nom.index)
-                art = _num(cal_rt.loc[ridx, analyte]); irt = _num(cal_rt.loc[ridx, is_name])
+            if str(analyte) in cal_rt_np and str(is_name) in cal_rt_np:
+                art = cal_rt_np[str(analyte)]; irt = cal_rt_np[str(is_name)]
                 rv = np.isfinite(art) & np.isfinite(irt)
                 if rv.any():
-                    rt_delta = float(np.nanmedian(np.abs((art[rv] - irt[rv]).to_numpy(float))))
+                    rt_delta = float(np.nanmedian(np.abs(art[rv] - irt[rv])))
             row = {
                 "Analyte": analyte, "Group": groups.get(analyte, analyte), "Internal Standard": is_name,
                 "IS Class": is_class, "Paired Analyte": paired_analyte,
