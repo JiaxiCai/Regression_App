@@ -1248,10 +1248,8 @@ def compute_pair_detail(result, analyte, is_name):
     }
 
 
-def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
-    """Apply manual calibrator exclusions to one pair and refresh its ranking summary."""
-    key = (str(analyte), str(is_name))
-    result.setdefault("manual_exclusions", {})[key] = sorted({float(v) for v in excluded_nominals})
+def _refresh_pair_ranking_summary(result, analyte, is_name, amr_source=None):
+    """Recompute one pair from its current effective calibrator set and refresh ranking metrics."""
     detail = compute_pair_detail(result, analyte, is_name)
     fit = detail["fit"]
     cal = detail["calibrators"]
@@ -1259,28 +1257,39 @@ def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
         result["criteria"], analyte, result.get("analyte_fit_settings", {})
     )
 
-    max_bias = float(cal.loc[cal["Use"], "|Bias| %"].max()) if cal["Use"].any() else np.nan
-    mean_bias = float(cal.loc[cal["Use"], "|Bias| %"].mean()) if cal["Use"].any() else np.nan
+    used = cal["Use"].astype(bool)
+    max_bias = float(cal.loc[used, "|Bias| %"].max()) if used.any() else np.nan
+    mean_bias = float(cal.loc[used, "|Bias| %"].mean()) if used.any() else np.nan
     r2 = float(fit.stats.get("fit_r2", np.nan))
     wr2 = float(fit.stats.get("weighted_r2", np.nan))
+
     qc = detail["qc_samples"]
-    by, qs = _qc_summary(
+    _, qs = _qc_summary(
         qc["Calculated"].to_numpy(float),
-        qc["Reference concentration"].to_numpy(float) if "Reference concentration" in qc.columns else qc["Nominal"].to_numpy(float),
+        qc["Reference concentration"].to_numpy(float)
+        if "Reference concentration" in qc.columns
+        else qc["Nominal"].to_numpy(float),
         qc["Nominal"].to_numpy(float),
     ) if not qc.empty else (pd.DataFrame(), {})
+
     qc_pass = bool(qs) and (
         np.isfinite(qs.get("qc_mean_abs_bias_pct", np.nan))
         and qs["qc_mean_abs_bias_pct"] <= criteria.max_qc_mean_abs_bias
         and np.isfinite(qs.get("qc_max_abs_bias_pct", np.nan))
         and qs["qc_max_abs_bias_pct"] <= criteria.max_qc_abs_bias
-        and (not np.isfinite(qs.get("qc_max_cv_pct", np.nan)) or qs["qc_max_cv_pct"] <= criteria.max_qc_cv)
+        and (
+            not np.isfinite(qs.get("qc_max_cv_pct", np.nan))
+            or qs["qc_max_cv_pct"] <= criteria.max_qc_cv
+        )
     )
-    active = cal.loc[cal["Use"], "Nominal"].to_numpy(float)
+
+    active = cal.loc[used, "Nominal"].to_numpy(float)
     cal_pass = (
         len(active) >= criteria.min_calibrators
-        and np.isfinite(max_bias) and max_bias <= criteria.max_calibrator_bias
-        and np.isfinite(r2) and r2 >= criteria.min_r2
+        and np.isfinite(max_bias)
+        and max_bias <= criteria.max_calibrator_bias
+        and np.isfinite(r2)
+        and r2 >= criteria.min_r2
     )
 
     ranking = result["ranking"]
@@ -1290,7 +1299,6 @@ def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
     )
     if mask.any():
         updates = {
-            "AMR Source": "Manual edited",
             "Pass": bool(cal_pass and qc_pass),
             "Calibration Pass": bool(cal_pass),
             "QC Pass": bool(qc_pass),
@@ -1298,9 +1306,9 @@ def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
             "LLOQ": float(np.min(active)) if len(active) else np.nan,
             "ULOQ": float(np.max(active)) if len(active) else np.nan,
             "Span Ratio": float(np.max(active) / np.min(active)) if len(active) else np.nan,
-            "Min Cal Bias %": float(cal.loc[cal["Use"], "Bias %"].min()) if cal["Use"].any() else np.nan,
-            "Max Cal Bias %": float(cal.loc[cal["Use"], "Bias %"].max()) if cal["Use"].any() else np.nan,
-            "Min Cal |Bias| %": float(cal.loc[cal["Use"], "|Bias| %"].min()) if cal["Use"].any() else np.nan,
+            "Min Cal Bias %": float(cal.loc[used, "Bias %"].min()) if used.any() else np.nan,
+            "Max Cal Bias %": float(cal.loc[used, "Bias %"].max()) if used.any() else np.nan,
+            "Min Cal |Bias| %": float(cal.loc[used, "|Bias| %"].min()) if used.any() else np.nan,
             "Max Cal |Bias| %": max_bias,
             "Mean Cal |Bias| %": mean_bias,
             "Fit R2": r2,
@@ -1316,10 +1324,73 @@ def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
             "QC Mean CV %": qs.get("qc_mean_cv_pct", np.nan),
             "QC Max CV %": qs.get("qc_max_cv_pct", np.nan),
         }
+        if amr_source is not None:
+            updates["AMR Source"] = str(amr_source)
         for col, value in updates.items():
             result["ranking"].loc[mask, col] = value
+
     return compute_pair_detail(result, analyte, is_name)
 
+
+def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
+    """Apply manual calibrator exclusions to one pair and refresh its ranking summary."""
+    key = (str(analyte), str(is_name))
+    result.setdefault("manual_exclusions", {})[key] = sorted(
+        {float(v) for v in excluded_nominals}
+    )
+    return _refresh_pair_ranking_summary(
+        result, analyte, is_name, amr_source="Manual edited"
+    )
+
+
+def refresh_matched_sil_dependents(result, analyte):
+    """Refresh all pair QC metrics that depend on one analyte's edited matched SIL-IS reference.
+
+    Surrogate calibrator selections are preserved. Only reference-dependent QC
+    metrics/pass status and any calibration metrics implied by the current
+    effective pair fits are recomputed.
+    """
+    criteria = _criteria_for_analyte(
+        result["criteria"], analyte, result.get("analyte_fit_settings", {})
+    )
+    if criteria.qc_reference_basis != "Matched SIL-IS calculated concentration":
+        return {"updated": 0, "failed": [], "matched_sil": ""}
+
+    is_meta = result.get("is_metadata", pd.DataFrame())
+    matched_sil = ""
+    if is_meta is not None and len(is_meta):
+        sil = is_meta[
+            is_meta["IS Class"].astype(str).eq("SIL-IS")
+            & is_meta["Paired Analyte"].astype(str).eq(str(analyte))
+        ]
+        if len(sil):
+            matched_sil = str(sil.iloc[0]["Component"])
+    if not matched_sil:
+        return {"updated": 0, "failed": [], "matched_sil": ""}
+
+    ranking = result.get("ranking", pd.DataFrame())
+    if ranking.empty:
+        return {"updated": 0, "failed": [], "matched_sil": matched_sil}
+
+    targets = ranking.loc[
+        ranking["Analyte"].astype(str).eq(str(analyte)),
+        "Internal Standard",
+    ].astype(str).drop_duplicates().tolist()
+
+    updated = 0
+    failed = []
+    for target_is in targets:
+        try:
+            _refresh_pair_ranking_summary(result, analyte, target_is, amr_source=None)
+            updated += 1
+        except Exception as exc:
+            failed.append((target_is, str(exc)))
+
+    return {
+        "updated": updated,
+        "failed": failed,
+        "matched_sil": matched_sil,
+    }
 
 def sync_pair_amr_to_surrogates(result, analyte, source_is):
     """Copy the selected pair's manual calibrator exclusions to all IS pairs for one analyte."""
