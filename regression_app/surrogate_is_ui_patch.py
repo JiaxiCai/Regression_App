@@ -16,7 +16,8 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 from .surrogate_is import (
     SurrogateCriteria, load_surrogate_data, load_user_amr, analyze_surrogate_is,
     component_mapping_table, qc_sample_mapping_table, pair_metric_matrix,
-    compute_pair_detail, refit_pair_with_exclusions, export_surrogate_workbook,
+    compute_pair_detail, refit_pair_with_exclusions, sync_pair_amr_to_surrogates,
+    export_surrogate_workbook,
 )
 from .ui_helpers import SortableTableItem, configure_sortable_table, make_table_filter_bar
 
@@ -157,9 +158,9 @@ def _build_tab(w):
     w.sis_qc_mapping_summary = QLabel("Load a dataset to review QC samples.")
     qma.addWidget(w.sis_qc_mapping_summary)
     qml.addLayout(qma)
-    w.sis_qc_mapping_table = QTableWidget(0, 5)
+    w.sis_qc_mapping_table = QTableWidget(0, 7)
     w.sis_qc_mapping_table.setHorizontalHeaderLabels([
-        "Include", "Sample Name", "Sample Type", "Automatic Include", "Sample Key"
+        "Include", "Name", "ID", "Sample Text", "Type", "Automatic Include", "Sample Key"
     ])
     w.sis_qc_mapping_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
     w.sis_qc_mapping_table.horizontalHeader().setStretchLastSection(True)
@@ -198,6 +199,12 @@ def _build_tab(w):
         "Manual edits are pair-specific and are labeled as Manual edited."
     )
     cal_label.setWordWrap(True); tpl.addWidget(cal_label)
+    sync_amr = QPushButton("Sync AMR to Other Surrogates")
+    sync_amr.setToolTip(
+        "Apply this pair's current calibrator inclusion/exclusion pattern to all other internal standards for the same analyte."
+    )
+    sync_amr.clicked.connect(lambda: _sync_amr_to_surrogates(w))
+    tpl.addWidget(sync_amr)
     w.sis_cal_detail = QTableWidget()
     configure_sortable_table(w.sis_cal_detail)
     w.sis_cal_detail.itemChanged.connect(lambda item: _calibrator_use_changed(w, item))
@@ -387,21 +394,27 @@ def _populate_qc_mapping(w):
         include.setFlags(include.flags() | Qt.ItemIsUserCheckable)
         include.setCheckState(Qt.Checked if bool(rec["Include"]) else Qt.Unchecked)
         table.setItem(r, 0, include)
-        for c, key in [(1, "Sample Name"), (2, "Sample Type"), (4, "Sample Key")]:
-            item = QTableWidgetItem(str(rec[key]))
+
+        for c, key in [
+            (1, "Name"), (2, "ID"), (3, "Sample Text"), (4, "Type"), (6, "Sample Key")
+        ]:
+            item = QTableWidgetItem(str(rec.get(key, "")))
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
             table.setItem(r, c, item)
+
         auto = QTableWidgetItem("YES" if bool(rec["Automatic Include"]) else "NO")
         auto.setFlags(auto.flags() & ~Qt.ItemIsEditable)
-        table.setItem(r, 3, auto)
+        table.setItem(r, 5, auto)
+
     table.blockSignals(False)
     try:
         table.itemChanged.disconnect()
     except Exception:
         pass
-    table.itemChanged.connect(lambda item: _update_qc_mapping_summary(w) if item.column() == 0 else None)
+    table.itemChanged.connect(
+        lambda item: _update_qc_mapping_summary(w) if item.column() == 0 else None
+    )
     _update_qc_mapping_summary(w)
-
 
 def _qc_mapping_from_ui(w):
     import pandas as pd
@@ -409,14 +422,15 @@ def _qc_mapping_from_ui(w):
     table = w.sis_qc_mapping_table
     for r in range(table.rowCount()):
         rows.append({
-            "Sample Key": table.item(r, 4).text(),
-            "Sample Name": table.item(r, 1).text(),
-            "Sample Type": table.item(r, 2).text(),
-            "Automatic Include": table.item(r, 3).text() == "YES",
+            "Sample Key": table.item(r, 6).text(),
+            "Name": table.item(r, 1).text(),
+            "ID": table.item(r, 2).text(),
+            "Sample Text": table.item(r, 3).text(),
+            "Type": table.item(r, 4).text(),
+            "Automatic Include": table.item(r, 5).text() == "YES",
             "Include": table.item(r, 0).checkState() == Qt.Checked,
         })
     return pd.DataFrame(rows)
-
 
 def _update_qc_mapping_summary(w):
     if not hasattr(w, "sis_qc_mapping_table"):
@@ -581,6 +595,59 @@ def _calibrator_use_changed(w, item):
     except Exception as exc:
         QMessageBox.critical(w, "Pair refit failed", str(exc))
         _selection_changed(w)
+
+
+def _sync_amr_to_surrogates(w):
+    if not w.sis_result:
+        return
+    pair = _selected_pair(w)
+    if pair is None:
+        return
+
+    exclusions = list(
+        w.sis_result.get("manual_exclusions", {}).get((str(pair[0]), str(pair[1])), [])
+    )
+    active_n = len(w.sis_result.get("stage1_levels", {}).get(str(pair[0]), [])) - len(exclusions)
+
+    answer = QMessageBox.question(
+        w,
+        "Sync AMR to other surrogates",
+        f"Apply the current {pair[0]} calibrator pattern ({active_n} included level(s)) "
+        "to every internal-standard candidate for this analyte?\n\n"
+        "Existing pair-specific manual exclusions for those surrogate fits will be replaced.",
+        QMessageBox.Yes | QMessageBox.No,
+        QMessageBox.No,
+    )
+    if answer != QMessageBox.Yes:
+        return
+
+    try:
+        result = sync_pair_amr_to_surrogates(w.sis_result, pair[0], pair[1])
+        _fill_table(w.sis_ranking, w.sis_result["ranking"])
+        _draw_heatmap(w)
+
+        detail = compute_pair_detail(w.sis_result, pair[0], pair[1])
+        _refresh_selected_pair(w, pair, detail, refresh_ranking=True)
+
+        failed = result.get("failed", [])
+        if failed:
+            names = ", ".join(name for name, _ in failed[:8])
+            more = "…" if len(failed) > 8 else ""
+            QMessageBox.warning(
+                w,
+                "AMR sync completed with skips",
+                f"Updated {result.get('updated', 0)} surrogate fit(s). "
+                f"{len(failed)} could not be refit with this AMR: {names}{more}"
+            )
+        else:
+            QMessageBox.information(
+                w,
+                "AMR sync complete",
+                f"Applied the current {pair[0]} AMR/calibrator pattern to "
+                f"{result.get('updated', 0)} surrogate fit(s)."
+            )
+    except Exception as exc:
+        QMessageBox.critical(w, "AMR sync failed", str(exc))
 
 
 def _refresh_selected_pair(w, pair, detail, refresh_ranking=False):
