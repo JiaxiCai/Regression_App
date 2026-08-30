@@ -313,6 +313,15 @@ def _build_tab(w):
     w.sis_heat_annotate.toggled.connect(lambda _: _draw_heatmap(w))
     hc.addWidget(w.sis_heat_annotate)
 
+    w.sis_heat_grey_fail = QCheckBox("Grey out failed pairs")
+    w.sis_heat_grey_fail.setChecked(False)
+    w.sis_heat_grey_fail.setToolTip(
+        "Display pairs whose final Pass status is false in grey while preserving metric values "
+        "and optional annotations."
+    )
+    w.sis_heat_grey_fail.toggled.connect(lambda _: _draw_heatmap(w))
+    hc.addWidget(w.sis_heat_grey_fail)
+
     export_png = QPushButton("Export PNG")
     export_png.clicked.connect(lambda: _export_heatmap(w, "png"))
     hc.addWidget(export_png)
@@ -473,6 +482,7 @@ def _save_surrogate_project(w):
                 "metric": w.sis_heat_metric.currentText(),
                 "order": w.sis_heat_order.currentText(),
                 "annotate": bool(w.sis_heat_annotate.isChecked()),
+                "grey_failed_pairs": bool(w.sis_heat_grey_fail.isChecked()),
             },
         }
 
@@ -595,6 +605,7 @@ def _open_surrogate_project(w):
         _restore_combo_text(w.sis_heat_metric, heat.get("metric", "Fit R2"))
         _restore_combo_text(w.sis_heat_order, heat.get("order", "Retention time"))
         w.sis_heat_annotate.setChecked(bool(heat.get("annotate", False)))
+        w.sis_heat_grey_fail.setChecked(bool(heat.get("grey_failed_pairs", False)))
 
         if w.sis_user_amr is not None and len(w.sis_user_amr):
             w.sis_amr_status.setText(
@@ -1436,7 +1447,44 @@ def _draw_heatmap(w):
 
     values = mat.to_numpy(float)
     ax = fig.add_subplot(111)
-    im = ax.imshow(values, aspect="auto")
+
+    if getattr(w, "sis_heat_grey_fail", None) is not None and w.sis_heat_grey_fail.isChecked():
+        rank = w.sis_result.get("ranking", pd.DataFrame())
+        pass_lookup = {}
+        if rank is not None and not rank.empty and "Pass" in rank.columns:
+            pass_lookup = {
+                (str(rec["Analyte"]), str(rec["Internal Standard"])): bool(rec["Pass"])
+                for _, rec in rank.iterrows()
+            }
+
+        import matplotlib.cm as cm
+        import matplotlib.colors as mcolors
+
+        base_cmap = cm.get_cmap()
+        finite = values[np.isfinite(values)]
+        if finite.size:
+            vmin = float(np.nanmin(finite)); vmax = float(np.nanmax(finite))
+            if np.isclose(vmin, vmax):
+                vmax = vmin + 1.0
+            norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
+            rgba = base_cmap(norm(values))
+        else:
+            norm = mcolors.Normalize(vmin=0.0, vmax=1.0)
+            rgba = np.zeros(values.shape + (4,), dtype=float)
+
+        failed = np.zeros(values.shape, dtype=bool)
+        for r, analyte in enumerate(mat.index):
+            for c, is_name in enumerate(mat.columns):
+                failed[r, c] = not pass_lookup.get((str(analyte), str(is_name)), False)
+
+        rgba[failed] = np.array([0.72, 0.72, 0.72, 1.0])
+        im = ax.imshow(rgba, aspect="auto")
+        scalar = cm.ScalarMappable(norm=norm, cmap=base_cmap)
+        scalar.set_array([])
+        colorbar_mappable = scalar
+    else:
+        im = ax.imshow(values, aspect="auto")
+        colorbar_mappable = im
     ax.set_xticks(range(len(mat.columns)))
     ax.set_xticklabels(mat.columns, rotation=45, ha="right", fontsize=8)
     ax.set_yticks(range(len(mat.index)))
@@ -1450,7 +1498,7 @@ def _draw_heatmap(w):
                 if text_value:
                     ax.text(c, r, text_value, ha="center", va="center", fontsize=6)
 
-    fig.colorbar(im, ax=ax, shrink=0.8)
+    fig.colorbar(colorbar_mappable, ax=ax, shrink=0.8)
     fig.tight_layout()
     w.sis_heat_canvas.draw_idle()
 
