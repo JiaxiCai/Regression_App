@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel,
     QPushButton, QFileDialog, QComboBox, QDoubleSpinBox, QSpinBox,
-    QTableWidget, QTableWidgetItem, QTabWidget, QHeaderView, QMessageBox, QMenu
+    QTableWidget, QTableWidgetItem, QTabWidget, QHeaderView, QMessageBox, QMenu, QCheckBox
 )
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -232,10 +232,32 @@ def _build_tab(w):
     rl.addWidget(w.sis_ranking); outtabs.addTab(rank_page, "Pair Ranking")
 
     heat_page = QWidget(); hl = QVBoxLayout(heat_page); hc = QHBoxLayout()
-    hc.addWidget(QLabel("Heatmap metric")); w.sis_heat_metric = QComboBox()
-    w.sis_heat_metric.addItems(["QC Mean |Bias| %", "QC Max |Bias| %", "QC Max CV %", "Max Cal |Bias| %", "Fit R2"])
+    hc.addWidget(QLabel("Heatmap value")); w.sis_heat_metric = QComboBox()
+    w.sis_heat_metric.addItems([
+        "Fit R2", "Weighted R2",
+        "Min Cal Bias %", "Max Cal Bias %",
+        "Min Cal |Bias| %", "Mean Cal |Bias| %", "Max Cal |Bias| %",
+        "QC Min Bias %", "QC Max Bias %",
+        "QC Min |Bias| %", "QC Mean |Bias| %", "QC Max |Bias| %",
+        "QC Min CV %", "QC Mean CV %", "QC Max CV %",
+        "LLOQ", "ULOQ", "Span Ratio", "n Cal", "QC Levels",
+        "Stage 2 Iterations", "Stage 2 Removed",
+    ])
     w.sis_heat_metric.currentTextChanged.connect(lambda _: _draw_heatmap(w))
-    hc.addWidget(w.sis_heat_metric); hc.addStretch(); hl.addLayout(hc)
+    hc.addWidget(w.sis_heat_metric)
+
+    w.sis_heat_annotate = QCheckBox("Annotate values")
+    w.sis_heat_annotate.toggled.connect(lambda _: _draw_heatmap(w))
+    hc.addWidget(w.sis_heat_annotate)
+
+    export_png = QPushButton("Export PNG")
+    export_png.clicked.connect(lambda: _export_heatmap(w, "png"))
+    hc.addWidget(export_png)
+    export_svg = QPushButton("Export SVG")
+    export_svg.clicked.connect(lambda: _export_heatmap(w, "svg"))
+    hc.addWidget(export_svg)
+
+    hc.addStretch(); hl.addLayout(hc)
     w.sis_heat_fig = Figure(figsize=(10, 6), dpi=100); w.sis_heat_canvas = FigureCanvas(w.sis_heat_fig)
     hl.addWidget(NavigationToolbar(w.sis_heat_canvas, heat_page)); hl.addWidget(w.sis_heat_canvas, 1)
     outtabs.addTab(heat_page, "Heatmap")
@@ -961,15 +983,75 @@ def _refresh_selected_pair(w, pair, detail, refresh_ranking=False):
     fig.tight_layout(); w.sis_detail_canvas.draw_idle()
 
 
+def _heatmap_annotation_text(metric, value):
+    if not np.isfinite(value):
+        return ""
+    if "R2" in metric:
+        return f"{value:.4f}"
+    if "%" in metric:
+        return f"{value:.1f}"
+    if metric in {"n Cal", "QC Levels", "Stage 2 Iterations", "Stage 2 Removed"}:
+        return f"{value:.0f}"
+    return f"{value:.3g}"
+
+
 def _draw_heatmap(w):
     fig = w.sis_heat_fig; fig.clear()
-    if not w.sis_result: w.sis_heat_canvas.draw_idle(); return
-    metric = w.sis_heat_metric.currentText(); mat = pair_metric_matrix(w.sis_result, metric)
-    if mat.empty: w.sis_heat_canvas.draw_idle(); return
-    ax = fig.add_subplot(111); im = ax.imshow(mat.to_numpy(float), aspect="auto")
-    ax.set_xticks(range(len(mat.columns))); ax.set_xticklabels(mat.columns, rotation=45, ha="right", fontsize=8)
-    ax.set_yticks(range(len(mat.index))); ax.set_yticklabels(mat.index, fontsize=8); ax.set_title(metric)
-    fig.colorbar(im, ax=ax, shrink=0.8); fig.tight_layout(); w.sis_heat_canvas.draw_idle()
+    if not w.sis_result:
+        w.sis_heat_canvas.draw_idle(); return
+    metric = w.sis_heat_metric.currentText()
+    mat = pair_metric_matrix(w.sis_result, metric)
+    if mat.empty:
+        ax = fig.add_subplot(111)
+        ax.text(0.5, 0.5, f"No data available for {metric}", ha="center", va="center")
+        ax.set_axis_off()
+        w.sis_heat_canvas.draw_idle(); return
+
+    values = mat.to_numpy(float)
+    ax = fig.add_subplot(111)
+    im = ax.imshow(values, aspect="auto")
+    ax.set_xticks(range(len(mat.columns)))
+    ax.set_xticklabels(mat.columns, rotation=45, ha="right", fontsize=8)
+    ax.set_yticks(range(len(mat.index)))
+    ax.set_yticklabels(mat.index, fontsize=8)
+    ax.set_title(metric)
+
+    if getattr(w, "sis_heat_annotate", None) is not None and w.sis_heat_annotate.isChecked():
+        for r in range(values.shape[0]):
+            for c in range(values.shape[1]):
+                text_value = _heatmap_annotation_text(metric, values[r, c])
+                if text_value:
+                    ax.text(c, r, text_value, ha="center", va="center", fontsize=6)
+
+    fig.colorbar(im, ax=ax, shrink=0.8)
+    fig.tight_layout()
+    w.sis_heat_canvas.draw_idle()
+
+
+def _export_heatmap(w, file_type):
+    if not w.sis_result:
+        QMessageBox.information(w, "No results", "Run Surrogate IS Analysis first.")
+        return
+    metric = w.sis_heat_metric.currentText()
+    safe_metric = "".join(ch if ch.isalnum() else "_" for ch in metric).strip("_").lower()
+    if file_type == "svg":
+        default_name = f"heatmap_{safe_metric}.svg"
+        filter_text = "SVG Vector Image (*.svg)"
+    else:
+        default_name = f"heatmap_{safe_metric}.png"
+        filter_text = "PNG Image (*.png)"
+
+    path, _ = QFileDialog.getSaveFileName(w, f"Export {metric} Heatmap", default_name, filter_text)
+    if not path:
+        return
+    suffix = f".{file_type}"
+    if not path.lower().endswith(suffix):
+        path += suffix
+    try:
+        w.sis_heat_fig.savefig(path, format=file_type, bbox_inches="tight")
+        QMessageBox.information(w, "Heatmap export complete", f"Saved:\n{path}")
+    except Exception as exc:
+        QMessageBox.critical(w, "Heatmap export failed", str(exc))
 
 
 def _selected_pair(w):
