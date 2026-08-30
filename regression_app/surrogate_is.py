@@ -664,7 +664,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
             xd = np.asarray(x[valid], float); yd = np.asarray(y[valid], float)
             level_mask = (xd >= user_lloq) & (xd <= user_uloq)
             levels = sorted(np.unique(xd[level_mask]).astype(float).tolist())
-            s1 = _fit_candidate(xd[level_mask], yd[level_mask], criteria) if int(level_mask.sum()) >= criteria.min_calibrators else None
+            s1 = _fit_candidate(xd[level_mask], yd[level_mask], analyte_criteria) if int(level_mask.sum()) >= analyte_criteria.min_calibrators else None
             amr_source = "User-defined"
         else:
             levels, s1 = select_stage1_levels(x[valid], y[valid], analyte_criteria)
@@ -1043,7 +1043,9 @@ def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
     detail = compute_pair_detail(result, analyte, is_name)
     fit = detail["fit"]
     cal = detail["calibrators"]
-    criteria = result["criteria"]
+    criteria = _criteria_for_analyte(
+        result["criteria"], analyte, result.get("analyte_fit_settings", {})
+    )
 
     max_bias = float(cal.loc[cal["Use"], "|Bias| %"].max()) if cal["Use"].any() else np.nan
     mean_bias = float(cal.loc[cal["Use"], "|Bias| %"].mean()) if cal["Use"].any() else np.nan
