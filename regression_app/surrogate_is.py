@@ -493,6 +493,58 @@ def _fit_pair_from_cache(cal_area, cal_nom, analyte, is_name, levels, criteria):
     )
 
 
+def _fit_pair_iterative(x, ratio, criteria, max_iterations=50):
+    """Greedy Stage-2 fit: remove the worst-bias concentration level until calibration criteria pass."""
+    x = np.asarray(x, float)
+    ratio = np.asarray(ratio, float)
+    valid = np.isfinite(x) & np.isfinite(ratio) & (x > 0)
+    x = x[valid]; ratio = ratio[valid]
+    if len(x) == 0:
+        return None
+
+    active_levels = sorted(np.unique(x).astype(float).tolist())
+    start_levels = list(active_levels)
+    last = None
+    iteration = 0
+
+    while len(active_levels) >= int(criteria.min_calibrators) and iteration < int(max_iterations):
+        iteration += 1
+        mask = np.isin(x, active_levels)
+        metrics = _fit_candidate(x[mask], ratio[mask], criteria)
+        if metrics is None:
+            break
+        last = metrics
+        if metrics["pass_cal"] or len(active_levels) <= int(criteria.min_calibrators):
+            break
+
+        backcalc = metrics["fit"].invert(ratio[mask])
+        bias = (backcalc - x[mask]) / x[mask] * 100.0
+        finite = np.isfinite(bias)
+        if not finite.any():
+            break
+        active_x = x[mask]
+        worst_pos = np.flatnonzero(finite)[int(np.argmax(np.abs(bias[finite])))]
+        worst_level = float(active_x[worst_pos])
+        active_levels = [lv for lv in active_levels if float(lv) != worst_level]
+
+    final_mask = np.isin(x, active_levels)
+    if final_mask.sum() >= int(criteria.min_calibrators):
+        final_metrics = _fit_candidate(x[final_mask], ratio[final_mask], criteria)
+        if final_metrics is not None:
+            last = final_metrics
+    if last is None:
+        return None
+
+    active_set = set(float(v) for v in active_levels)
+    return {
+        "metrics": last,
+        "active_levels": [float(v) for v in active_levels],
+        "removed_levels": [float(v) for v in start_levels if float(v) not in active_set],
+        "iterations": int(iteration),
+        "start_n": int(len(start_levels)),
+    }
+
+
 def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_sample_mapping=None, user_amr=None):
     criteria = criteria or SurrogateCriteria()
     data = apply_component_mapping(normalized, component_mapping)
@@ -540,6 +592,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
     )
 
     rankings = []; stage1_rows = []; stage1_levels = {}; stage1_sources = {}
+    auto_pair_exclusions = {}; stage2_iterations = {}
     for analyte in analytes:
         idx = cal_area.index.intersection(cal_nom.index)
         x = _num(cal_nom.loc[idx, analyte]); y = _num(cal_area.loc[idx, analyte])
@@ -567,9 +620,21 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
         if not levels: continue
 
         matched_sil = _matched_sil_name(is_meta, analyte)
-        matched_sil_fit = _fit_pair_from_cache(
-            cal_area, cal_nom, analyte, matched_sil, levels, criteria
-        ) if matched_sil else None
+        matched_sil_fit = None
+        if matched_sil and str(matched_sil) in cal_area_np:
+            xa_sil = cal_nom_np[str(analyte)]
+            aa_sil = cal_area_np[str(analyte)]
+            ia_sil = cal_area_np[str(matched_sil)]
+            sil_valid = (
+                np.isfinite(xa_sil) & np.isfinite(aa_sil) & np.isfinite(ia_sil)
+                & (xa_sil > 0) & (ia_sil > 0) & np.isin(xa_sil, levels)
+            )
+            if int(sil_valid.sum()) >= criteria.min_calibrators:
+                sil_iter = _fit_pair_iterative(
+                    xa_sil[sil_valid], aa_sil[sil_valid] / ia_sil[sil_valid], criteria
+                )
+                if sil_iter is not None:
+                    matched_sil_fit = sil_iter["metrics"]
 
         for is_name in is_names:
             if is_name not in cal_area.columns: continue
@@ -578,10 +643,16 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
             ia = cal_area_np[str(is_name)]
             valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & np.isin(xa, levels)
             if int(valid.sum()) < criteria.min_calibrators: continue
-            xfit = xa[valid]; ratio = aa[valid] / ia[valid]
-            m = _fit_candidate(xfit, ratio, criteria)
-            if m is None: continue
+            xstart = xa[valid]; rstart = aa[valid] / ia[valid]
+            iterative = _fit_pair_iterative(xstart, rstart, criteria)
+            if iterative is None: continue
+            m = iterative["metrics"]
             fit = m["fit"]
+            pair_key = (str(analyte), str(is_name))
+            stage1_set = set(float(v) for v in levels)
+            kept_set = set(float(v) for v in iterative["active_levels"])
+            auto_pair_exclusions[pair_key] = sorted(stage1_set - kept_set)
+            stage2_iterations[pair_key] = int(iterative["iterations"])
             reference_basis = criteria.qc_reference_basis
 
             qidx = qc_area.index.intersection(qc_nom.index)
@@ -634,7 +705,9 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                 "Matched SIL-IS": own_sil,
                 "Median |ΔRT|": rt_delta,
                 "QC Reference": reference_basis,
-                "AMR Source": stage1_sources.get(str(analyte), "Automatic"),
+                "AMR Source": "Stage 2 iterative" if iterative["removed_levels"] else stage1_sources.get(str(analyte), "Automatic"),
+                "Stage 2 Iterations": int(iterative["iterations"]),
+                "Stage 2 Removed": int(len(iterative["removed_levels"])),
                 "Pass": bool(m["pass_cal"] and qc_pass), "Calibration Pass": bool(m["pass_cal"]), "QC Pass": qc_pass,
                 "n Cal": m["n_cal"], "LLOQ": m["lloq"], "ULOQ": m["uloq"], "Span Ratio": m["uloq"] / m["lloq"],
                 "Max Cal |Bias| %": m["max_cal_abs_bias_pct"], "Mean Cal |Bias| %": m["mean_cal_abs_bias_pct"],
@@ -659,6 +732,8 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
         "user_amr": user_amr,
         "stage1_levels": stage1_levels,
         "stage1_sources": stage1_sources,
+        "auto_pair_exclusions": auto_pair_exclusions,
+        "stage2_iterations": stage2_iterations,
         "manual_exclusions": {},
         "_cache": {
             "cal_area": cal_area, "qc_area": qc_area,
@@ -714,11 +789,19 @@ def compute_pair_detail(result, analyte, is_name):
         excluded = set(float(v) for v in manual.get(key, []))
         active_levels = [float(v) for v in all_levels if float(v) not in excluded]
     else:
-        # Initial state follows Stage 1, but all other usable levels remain visible
-        # and can be manually added by the user.
+        # Automatic state = Stage 1 candidate range followed by pair-specific
+        # greedy Stage 2 trimming. Levels outside Stage 1 remain visible for
+        # optional manual expansion.
         stage1_set = set(float(v) for v in levels)
-        active_levels = [float(v) for v in all_levels if float(v) in stage1_set]
-        excluded = set(float(v) for v in all_levels if float(v) not in stage1_set)
+        stage2_removed = set(
+            float(v) for v in result.get("auto_pair_exclusions", {}).get(key, [])
+        )
+        active_levels = [
+            float(v) for v in all_levels
+            if float(v) in stage1_set and float(v) not in stage2_removed
+        ]
+        active_set = set(active_levels)
+        excluded = set(float(v) for v in all_levels if float(v) not in active_set)
 
     idx = cal_area.index.intersection(cal_nom.index)
     xa = _num(cal_nom.loc[idx, analyte]); aa = _num(cal_area.loc[idx, analyte])
@@ -935,7 +1018,13 @@ def sync_pair_amr_to_surrogates(result, analyte, source_is):
     else:
         all_levels = _usable_pair_levels(result, analyte, source_is)
         stage1 = set(float(v) for v in result.get("stage1_levels", {}).get(str(analyte), []))
-        exclusions = [float(v) for v in all_levels if float(v) not in stage1]
+        auto_removed = set(
+            float(v) for v in result.get("auto_pair_exclusions", {}).get(key, [])
+        )
+        exclusions = [
+            float(v) for v in all_levels
+            if float(v) not in stage1 or float(v) in auto_removed
+        ]
     ranking = result.get("ranking", pd.DataFrame())
     if ranking.empty:
         return {"updated": 0, "failed": []}
