@@ -168,10 +168,10 @@ def _build_tab(w):
     g.addWidget(w.sis_sil_range_policy, 2, 5)
 
     specs = [
-        ("Max cal |bias| %", "sis_cal_bias", 20.0), ("Minimum Fit R²", "sis_r2", 0.99),
+        ("Max cal |bias| %", "sis_cal_bias", 15.0), ("Minimum Fit R²", "sis_r2", 0.995),
         ("Max QC mean |bias| %", "sis_qc_mean_bias", 20.0),
-        ("Max QC individual |bias| %", "sis_qc_max_bias", 30.0),
-        ("Max QC CV %", "sis_qc_cv", 20.0),
+        ("Max QC individual |bias| %", "sis_qc_max_bias", 20.0),
+        ("Max QC CV %", "sis_qc_cv", 10.0),
     ]
     for i, (label, attr, val) in enumerate(specs):
         r = 1 + i // 2; c = (i % 2) * 2; g.addWidget(QLabel(label), r, c)
