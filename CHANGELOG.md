@@ -2,6 +2,13 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.32] - 2026-08-30
+
+### More robust Surrogate IS workbook export
+- Surrogate IS Excel export now writes the full workbook to a local temporary `.xlsx` file first, closes it, and then moves the completed workbook to the user-selected destination.
+- This avoids keeping a long-lived open Excel file handle on cloud-synced/network destinations and reduces low-level file descriptor failures such as `[Errno 9] Bad file descriptor`.
+- Export failures now include an expandable full Python traceback in the error dialog so data-specific or filesystem-specific failures can be diagnosed precisely.
+
 ## [0.5.31] - 2026-08-30
 
 ### Automatic matched-SIL dependency refresh
