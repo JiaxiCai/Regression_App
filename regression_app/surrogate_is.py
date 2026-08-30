@@ -595,7 +595,7 @@ def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
         and (not np.isfinite(qs.get("qc_max_cv_pct", np.nan)) or qs["qc_max_cv_pct"] <= criteria.max_qc_cv)
     )
     cal_pass = (
-        len(fit.x) >= criteria.min_calibrators
+        len(active) >= criteria.min_calibrators
         and np.isfinite(max_bias) and max_bias <= criteria.max_calibrator_bias
         and np.isfinite(r2) and r2 >= criteria.min_r2
     )
