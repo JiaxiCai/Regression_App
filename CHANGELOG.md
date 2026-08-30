@@ -2,6 +2,18 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.23] - 2026-08-30
+
+### Exhaustive contiguous surrogate-curve search
+- Added a Pair Search selector with `Exhaustive contiguous` (new default) and legacy `Greedy` modes.
+- Exhaustive mode evaluates every contiguous calibration window within the analyte's allowed starting calibrators instead of repeatedly removing only the current worst-bias level.
+- Candidate windows must satisfy the configured calibration criteria; QC bias and precision are then evaluated for the same candidate window.
+- Search ranking first prefers windows passing both calibration and QC criteria, then prefers the widest concentration span and more retained calibrator levels; QC CV/bias and calibration quality act as tie-breakers.
+- This avoids local-optimum failures where the greedy algorithm reaches an acceptable but substantially poorer surrogate curve.
+- Verified on the supplied urine dataset for Penicillin G / Piperacillin-D5: Cal 3-9 is a valid strong contiguous solution under 0.995 Fit R², 15% calibrator absolute bias, 20% QC absolute bias, and 10% QC CV.
+- Exhaustive search respects the selected calibrator source. TargetLynx Primary Flags exclusions remain hard starting exclusions unless the user manually re-includes a level.
+- Pair Ranking now records the Pair Search mode, and project files preserve the selected search strategy.
+
 ## [0.5.22] - 2026-08-30
 
 ### TargetLynx-compatible Include Origin weighting
