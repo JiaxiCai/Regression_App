@@ -1477,32 +1477,48 @@ def _draw_heatmap(w):
 
     values = mat.to_numpy(float)
     ax = fig.add_subplot(111)
-    im = ax.imshow(values, aspect="auto")
-    colorbar_mappable = im
 
-    if getattr(w, "sis_heat_grey_fail", None) is not None and w.sis_heat_grey_fail.isChecked():
-        from matplotlib.patches import Rectangle
-
-        rank = w.sis_result.get("ranking", pd.DataFrame())
+    # Build a pair-status matrix aligned exactly to the displayed metric
+    # matrix. Missing metric values are always shown in grey. When requested,
+    # failed pairs are masked as well so Matplotlib itself renders the cell grey
+    # rather than relying on post-hoc rectangle overlays.
+    rank = w.sis_result.get("ranking", pd.DataFrame())
+    status = np.full(values.shape, False, dtype=bool)
+    status_known = np.full(values.shape, False, dtype=bool)
+    if rank is not None and not rank.empty and "Pass" in rank.columns:
         pass_lookup = {}
-        if rank is not None and not rank.empty and "Pass" in rank.columns:
-            for _, rec in rank.iterrows():
-                raw_pass = rec["Pass"]
-                if isinstance(raw_pass, (bool, np.bool_)):
-                    passed = bool(raw_pass)
-                else:
-                    passed = str(raw_pass).strip().casefold() in {
-                        "true", "pass", "passed", "1", "yes"
-                    }
-                pass_lookup[(str(rec["Analyte"]), str(rec["Internal Standard"]))] = passed
+        for _, rec in rank.iterrows():
+            raw_pass = rec["Pass"]
+            if isinstance(raw_pass, (bool, np.bool_)):
+                passed = bool(raw_pass)
+            else:
+                passed = str(raw_pass).strip().casefold() in {
+                    "true", "pass", "passed", "1", "yes"
+                }
+            pass_lookup[(str(rec["Analyte"]), str(rec["Internal Standard"]))] = passed
 
         for r, analyte in enumerate(mat.index):
             for c, is_name in enumerate(mat.columns):
-                if not pass_lookup.get((str(analyte), str(is_name)), False):
-                    ax.add_patch(Rectangle(
-                        (c - 0.5, r - 0.5), 1.0, 1.0,
-                        facecolor="0.72", edgecolor="none", zorder=2,
-                    ))
+                key = (str(analyte), str(is_name))
+                if key in pass_lookup:
+                    status_known[r, c] = True
+                    status[r, c] = bool(pass_lookup[key])
+
+    missing_metric = ~np.isfinite(values)
+    grey_failed = (
+        getattr(w, "sis_heat_grey_fail", None) is not None
+        and w.sis_heat_grey_fail.isChecked()
+    )
+    mask = missing_metric.copy()
+    if grey_failed:
+        mask |= (~status_known) | (~status)
+
+    import matplotlib.pyplot as plt
+    cmap = plt.get_cmap().copy()
+    cmap.set_bad("0.72")
+    display_values = np.ma.array(values, mask=mask)
+    im = ax.imshow(display_values, aspect="auto", cmap=cmap)
+    colorbar_mappable = im
     ax.set_xticks(range(len(mat.columns)))
     ax.set_xticklabels(mat.columns, rotation=45, ha="right", fontsize=8)
     ax.set_yticks(range(len(mat.index)))
@@ -1513,6 +1529,8 @@ def _draw_heatmap(w):
         for r in range(values.shape[0]):
             for c in range(values.shape[1]):
                 text_value = _heatmap_annotation_text(metric, values[r, c])
+                if not text_value and not np.isfinite(values[r, c]):
+                    text_value = "N/A"
                 if text_value:
                     ax.text(c, r, text_value, ha="center", va="center", fontsize=6, zorder=3)
 
