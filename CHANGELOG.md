@@ -2,6 +2,20 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.15] - 2026-08-29
+
+### Iterative Stage 2 analyte–IS fitting
+- Restored the original greedy iterative analyte/IS fitting concept within the app's two-stage surrogate workflow.
+- Stage 1 continues to establish the common analyte-level candidate range.
+- For each analyte × IS pair, Stage 2 now starts with all usable Stage-1 levels, fits the configured calibration model, evaluates calibrator bias and Fit R², removes the concentration level containing the worst absolute-bias calibrator when the fit fails, and repeats.
+- Iteration stops when the configured calibration criteria pass, the minimum calibrator-level count is reached, or the iteration limit is reached.
+- Stage 2 exclusions are stored independently for every analyte × IS pair.
+- Pair Ranking reports Stage 2 iteration count and number of automatically removed levels; AMR Source is labeled Stage 2 iterative when trimming occurred.
+- Pair Detail starts from the resulting automatic Stage-2 level set while still displaying removed Stage-2 levels and usable out-of-Stage-1 levels unchecked for manual re-inclusion.
+- Manual calibrator edits continue to override the automatic pair selection and can expand or shrink the pair AMR.
+- AMR synchronization copies the effective current calibrator pattern, including automatic Stage-2 removals and manual changes.
+- Matched SIL-IS QC reference calculations use the matched SIL pair's own effective calibration levels.
+
 ## [0.5.14] - 2026-08-29
 
 ### Manual AMR expansion beyond Stage 1
