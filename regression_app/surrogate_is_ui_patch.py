@@ -62,7 +62,8 @@ def _build_tab(w):
     page = QWidget(); root = QVBoxLayout(page)
     intro = QLabel(
         "Systematically benchmark every analyte × internal-standard pairing. "
-        "Stage 1 establishes an analyte-only candidate calibration range. Stage 2 then fits each "
+        "The starting calibrator set can come from Stage 1 or from the calibrators retained by "
+        "TargetLynx Primary Flags. Stage 2 then fits each "
         "analyte/IS response ratio iteratively, removing the worst-bias concentration level until "
         "the configured calibration criteria pass or the minimum calibrator count is reached. "
         "QC bias and precision are evaluated after the Stage 2 pair fit."
@@ -85,6 +86,21 @@ def _build_tab(w):
     clear_amr.clicked.connect(lambda: _clear_user_amr(w))
     amr_row.addWidget(clear_amr)
     root.addLayout(amr_row)
+
+    source_row = QHBoxLayout()
+    source_row.addWidget(QLabel("Calibrator source"))
+    w.sis_calibrator_source = QComboBox()
+    w.sis_calibrator_source.addItems([
+        "Stage 1",
+        "TargetLynx Primary Flags",
+    ])
+    w.sis_calibrator_source.setToolTip(
+        "Stage 1: derive the analyte candidate range automatically or from a user AMR file. "
+        "TargetLynx Primary Flags: skip Stage 1 and use the analyte calibrators not marked X or lowercase l as the common starting set."
+    )
+    source_row.addWidget(w.sis_calibrator_source)
+    source_row.addStretch()
+    root.addLayout(source_row)
 
     box = QGroupBox("Acceptance criteria"); g = QGridLayout(box)
     g.addWidget(QLabel("Model"), 0, 0)
@@ -325,9 +341,15 @@ def _load(w):
         _populate_qc_mapping(w)
         n_an = data.loc[data["Component Role"] == "Analyte", "Component"].nunique()
         n_is = data.loc[data["Component Role"] == "IS", "Component"].nunique()
+        flag_note = ""
+        if "Primary Flags" in data.columns:
+            flags = data["Primary Flags"].fillna("").astype(str)
+            flagged = int((flags.str.contains("X", regex=False) | flags.str.contains("l", regex=False)).sum())
+            if flagged:
+                flag_note = f" {flagged:,} row(s) carry TargetLynx X/l Primary Flags."
         w.sis_note.setText(
             f"Loaded {meta.get('format', 'data')}: {len(data):,} component rows; "
-            f"{n_an} analyte component(s), {n_is} internal standard(s)."
+            f"{n_an} analyte component(s), {n_is} internal standard(s).{flag_note}"
         )
     except Exception as exc:
         QMessageBox.critical(w, "Surrogate IS import failed", str(exc))
@@ -717,7 +739,8 @@ def _run(w):
                 return
         w.sis_result = analyze_surrogate_is(
             w.sis_data, _criteria(w), component_mapping=mapping,
-            qc_sample_mapping=qc_mapping, user_amr=w.sis_user_amr
+            qc_sample_mapping=qc_mapping, user_amr=w.sis_user_amr,
+            calibrator_source_mode=w.sis_calibrator_source.currentText()
         ); rank = w.sis_result["ranking"]
         w.sis_rank_filter_column.blockSignals(True)
         w.sis_rank_filter_column.clear()
