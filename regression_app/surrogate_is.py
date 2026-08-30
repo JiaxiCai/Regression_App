@@ -668,6 +668,22 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
     }
 
 
+def _usable_pair_levels(result, analyte, is_name):
+    """Return all positive calibrator levels with usable analyte and IS responses for a pair."""
+    cache = result.get("_cache", {})
+    cal_area = cache.get("cal_area"); cal_nom = cache.get("cal_nom")
+    if cal_area is None or cal_nom is None:
+        return []
+    if analyte not in cal_area.columns or analyte not in cal_nom.columns or is_name not in cal_area.columns:
+        return []
+    idx = cal_area.index.intersection(cal_nom.index)
+    xa = _num(cal_nom.loc[idx, analyte])
+    aa = _num(cal_area.loc[idx, analyte])
+    ia = _num(cal_area.loc[idx, is_name])
+    valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0)
+    return sorted(np.unique(xa[valid].to_numpy(float)).tolist())
+
+
 def compute_pair_detail(result, analyte, is_name):
     """Recompute detailed calibration/QC data for one selected pair only.
 
@@ -687,10 +703,22 @@ def compute_pair_detail(result, analyte, is_name):
     levels = result.get("stage1_levels", {}).get(str(analyte), [])
     if not levels:
         raise ValueError(f"No Stage 1 calibration range is available for {analyte}.")
-    excluded = set(
-        float(v) for v in result.get("manual_exclusions", {}).get((str(analyte), str(is_name)), [])
-    )
-    active_levels = [float(v) for v in levels if float(v) not in excluded]
+
+    all_levels = _usable_pair_levels(result, analyte, is_name)
+    if not all_levels:
+        raise ValueError("No usable calibrator levels are available for this pair.")
+
+    key = (str(analyte), str(is_name))
+    manual = result.get("manual_exclusions", {})
+    if key in manual:
+        excluded = set(float(v) for v in manual.get(key, []))
+        active_levels = [float(v) for v in all_levels if float(v) not in excluded]
+    else:
+        # Initial state follows Stage 1, but all other usable levels remain visible
+        # and can be manually added by the user.
+        stage1_set = set(float(v) for v in levels)
+        active_levels = [float(v) for v in all_levels if float(v) in stage1_set]
+        excluded = set(float(v) for v in all_levels if float(v) not in stage1_set)
 
     idx = cal_area.index.intersection(cal_nom.index)
     xa = _num(cal_nom.loc[idx, analyte]); aa = _num(cal_area.loc[idx, analyte])
@@ -808,7 +836,7 @@ def compute_pair_detail(result, analyte, is_name):
     cal_detail["|Bias| %"] = np.abs(cal_detail["Bias %"])
     # Add excluded Stage-1 levels back to the table for transparent manual editing.
     if excluded:
-        all_valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & xa.isin(levels)
+        all_valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & xa.isin(all_levels)
         ex_mask = all_valid & xa.isin(list(excluded))
         if int(ex_mask.sum()):
             ex_x = xa[ex_mask].to_numpy(float)
@@ -875,7 +903,7 @@ def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
     )
     if mask.any():
         updates = {
-            "AMR Source": "Manual edited" if excluded_nominals else result.get("stage1_sources", {}).get(str(analyte), "Automatic"),
+            "AMR Source": "Manual edited",
             "Pass": bool(cal_pass and qc_pass),
             "Calibration Pass": bool(cal_pass),
             "QC Pass": bool(qc_pass),
@@ -901,7 +929,13 @@ def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
 def sync_pair_amr_to_surrogates(result, analyte, source_is):
     """Copy the selected pair's manual calibrator exclusions to all IS pairs for one analyte."""
     key = (str(analyte), str(source_is))
-    exclusions = list(result.get("manual_exclusions", {}).get(key, []))
+    manual = result.get("manual_exclusions", {})
+    if key in manual:
+        exclusions = list(manual.get(key, []))
+    else:
+        all_levels = _usable_pair_levels(result, analyte, source_is)
+        stage1 = set(float(v) for v in result.get("stage1_levels", {}).get(str(analyte), []))
+        exclusions = [float(v) for v in all_levels if float(v) not in stage1]
     ranking = result.get("ranking", pd.DataFrame())
     if ranking.empty:
         return {"updated": 0, "failed": []}
