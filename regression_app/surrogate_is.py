@@ -19,6 +19,7 @@ class SurrogateCriteria:
     max_qc_mean_abs_bias: float = 20.0
     max_qc_abs_bias: float = 30.0
     max_qc_cv: float = 20.0
+    qc_reference_basis: str = "Nominal concentration"
     origin_mode: str = ORIGIN_EXCLUDE
 
 
@@ -90,6 +91,28 @@ def user_amr_lookup(amr_table):
     }
 
 
+def _strip_isotope_label(name):
+    """Best-effort base name for common stable-isotope-labelled component names."""
+    import re
+    text = str(name).strip()
+    patterns = [
+        r"[-_ ]D\d+\b", r"[-_ ]\d+C\d+\b", r"[-_ ]\d+N\d+\b",
+        r"[-_ ]\d+O\d+\b", r"[-_ ]\d+S\d+\b",
+    ]
+    out = text
+    for pat in patterns:
+        out = re.sub(pat, "", out, flags=re.IGNORECASE)
+    return out.strip(" _-")
+
+
+def _auto_is_assignment(component, analytes):
+    base = _strip_isotope_label(component)
+    exact = {str(a).casefold(): str(a) for a in analytes}
+    paired = exact.get(base.casefold(), "")
+    is_sil = bool(paired) and base.casefold() != str(component).casefold()
+    return ("SIL-IS" if is_sil else "Surrogate", paired)
+
+
 def normalize_targetlynx(df):
     if "Compound" not in df.columns:
         raise ValueError("TargetLynx table does not contain Compound.")
@@ -119,6 +142,8 @@ def normalize_targetlynx(df):
     out["Auto Role"] = out["Component Role"]
     out["Nominal"] = _num(df.get("Std. Conc", np.nan))
     out["Area"] = _num(df["Area"])
+    rt_col = _first_existing(df.columns, ["RT", "Retention Time", "Retention Time (min)"])
+    out["RT"] = _num(df[rt_col]) if rt_col else np.nan
     out["Injection"] = _num(df[inj_col]) if inj_col else np.arange(1, len(df) + 1)
     return out.reset_index(drop=True)
 
@@ -137,6 +162,7 @@ def normalize_generic_long(df):
     component_group = _first_existing(cols, ["Component Group Name", "Component Group", "Analyte Group"])
     concentration = _first_existing(cols, ["Actual Concentration", "Std. Conc", "Nominal", "Concentration"])
     area = _first_existing(cols, ["Area", "Peak Area", "Response"])
+    rt_col = _first_existing(cols, ["RT", "Retention Time", "Retention Time (min)"])
     injection = _first_existing(cols, ["Sample Index", "Injection", "#"])
 
     required = {
@@ -182,25 +208,32 @@ def normalize_generic_long(df):
         out["Auto Role"] = out["Component Role"]
     out["Nominal"] = _num(df[concentration])
     out["Area"] = _num(df[area])
+    out["RT"] = _num(df[rt_col]) if rt_col else np.nan
     out["Injection"] = _num(df[injection]) if injection else np.arange(1, len(df) + 1)
     return out.reset_index(drop=True)
 
 
 def component_mapping_table(normalized):
     """Return one editable setup row per detected component."""
+    analytes = sorted(
+        normalized.loc[normalized["Component Role"] == "Analyte", "Component"].astype(str).unique()
+    )
     rows = []
     for component, g in normalized.groupby("Component", sort=True):
         auto = str(g.get("Auto Role", g["Component Role"]).iloc[0])
+        role = str(g["Component Role"].iloc[0])
+        is_class, paired = _auto_is_assignment(component, analytes) if role == "IS" else ("", "")
         rows.append({
             "Component": str(component),
             "Automatic Role": auto,
-            "Role": str(g["Component Role"].iloc[0]),
-            "Include": str(g["Component Role"].iloc[0]) != "Ignore",
+            "Role": role,
+            "IS Class": is_class,
+            "Paired Analyte": paired,
+            "Include": role != "Ignore",
             "Calibrator Rows": int(_sample_type_mask(g["Sample Type"], "cal").sum()) if "Sample Type" in g else 0,
             "QC Rows": int(_sample_type_mask(g["Sample Type"], "qc").sum()) if "Sample Type" in g else 0,
         })
     return pd.DataFrame(rows)
-
 
 def apply_component_mapping(normalized, mapping):
     """Apply user-visible component role/include choices to a copy of the data."""
@@ -210,14 +243,20 @@ def apply_component_mapping(normalized, mapping):
 
     role_map = {}
     include_map = {}
+    class_map = {}
+    paired_map = {}
     for _, row in mapping.iterrows():
         name = str(row["Component"])
         role = str(row.get("Role", row.get("Automatic Role", "Ignore")))
         include = bool(row.get("Include", True))
         role_map[name] = role
         include_map[name] = include
+        class_map[name] = str(row.get("IS Class", ""))
+        paired_map[name] = str(row.get("Paired Analyte", ""))
 
     data["Component Role"] = data["Component"].astype(str).map(role_map).fillna(data["Component Role"])
+    data["IS Class"] = data["Component"].astype(str).map(class_map).fillna("")
+    data["Paired Analyte"] = data["Component"].astype(str).map(paired_map).fillna("")
     keep = data["Component"].astype(str).map(include_map).fillna(True).astype(bool)
     keep &= data["Component Role"].astype(str).isin(["Analyte", "IS"])
     return data.loc[keep].copy()
@@ -294,6 +333,14 @@ def _sample_metadata(normalized, rows):
 def _pivot(normalized, rows):
     return normalized.loc[rows].pivot_table(
         index=["Sample Key", "Sample Name"], columns="Component", values="Area", aggfunc="first"
+    )
+
+
+def _rt_pivot(normalized, rows):
+    if "RT" not in normalized.columns:
+        return pd.DataFrame()
+    return normalized.loc[rows].pivot_table(
+        index=["Sample Key", "Sample Name"], columns="Component", values="RT", aggfunc="first"
     )
 
 
@@ -390,6 +437,31 @@ def _qc_summary(calc, nominal):
     }
 
 
+def _matched_sil_name(is_meta, analyte):
+    if is_meta is None or len(is_meta) == 0:
+        return ""
+    x = is_meta[
+        is_meta["IS Class"].astype(str).eq("SIL-IS")
+        & is_meta["Paired Analyte"].astype(str).eq(str(analyte))
+    ]
+    return str(x.index[0]) if len(x) else ""
+
+
+def _fit_pair_from_cache(cal_area, cal_nom, analyte, is_name, levels, criteria):
+    if not is_name or is_name not in cal_area.columns:
+        return None
+    idx = cal_area.index.intersection(cal_nom.index)
+    xa = _num(cal_nom.loc[idx, analyte]); aa = _num(cal_area.loc[idx, analyte]); ia = _num(cal_area.loc[idx, is_name])
+    valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & xa.isin(levels)
+    if int(valid.sum()) < criteria.min_calibrators:
+        return None
+    return _fit_candidate(
+        xa[valid].to_numpy(float),
+        (aa[valid] / ia[valid]).to_numpy(float),
+        criteria,
+    )
+
+
 def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_sample_mapping=None, user_amr=None):
     criteria = criteria or SurrogateCriteria()
     data = apply_component_mapping(normalized, component_mapping)
@@ -400,6 +472,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
     if not qc_rows.any(): raise ValueError("No QC rows were detected.")
 
     cal_area = _pivot(data, cal_rows); qc_area = _pivot(data, qc_rows)
+    cal_rt = _rt_pivot(data, cal_rows); qc_rt = _rt_pivot(data, qc_rows)
     cal_nom = _analyte_nominals(data, cal_rows); qc_nom = _analyte_nominals(data, qc_rows)
     qc_meta = _sample_metadata(data, qc_rows)
     analytes = [c for c in cal_nom.columns if c in cal_area.columns]
@@ -408,6 +481,11 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
     if not is_names: raise ValueError("No internal-standard components were detected.")
     groups = _group_lookup(data)
     amr_lookup = user_amr_lookup(user_amr)
+    is_meta = (
+        data.loc[data["Component Role"] == "IS", ["Component", "IS Class", "Paired Analyte"]]
+        .drop_duplicates("Component").set_index("Component")
+        if "IS Class" in data.columns else pd.DataFrame()
+    )
 
     rankings = []; stage1_rows = []; stage1_levels = {}; stage1_sources = {}
     for analyte in analytes:
@@ -436,6 +514,11 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
         stage1_sources[str(analyte)] = amr_source
         if not levels: continue
 
+        matched_sil = _matched_sil_name(is_meta, analyte)
+        matched_sil_fit = _fit_pair_from_cache(
+            cal_area, cal_nom, analyte, matched_sil, levels, criteria
+        ) if matched_sil else None
+
         for is_name in is_names:
             if is_name not in cal_area.columns: continue
             idx = cal_area.index.intersection(cal_nom.index)
@@ -455,7 +538,20 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                 qvalid = np.isfinite(qa) & np.isfinite(qi) & np.isfinite(qn) & (qi > 0) & (qn >= m["lloq"]) & (qn <= m["uloq"])
                 qratio = (qa[qvalid] / qi[qvalid]).to_numpy(float)
                 qnom = qn[qvalid].to_numpy(float); qcalc = fit.invert(qratio)
-                by_level, qs = _qc_summary(qcalc, qnom)
+                qref = qnom.copy()
+                reference_basis = "Nominal concentration"
+                if criteria.qc_reference_basis == "Matched SIL-IS calculated concentration":
+                    if matched_sil_fit is not None and matched_sil in qc_area.columns:
+                        qsil = _num(qc_area.loc[qidx, matched_sil])
+                        sil_valid_values = qsil[qvalid].to_numpy(float)
+                        qa_values = qa[qvalid].to_numpy(float)
+                        sil_ratio = qa_values / sil_valid_values
+                        qref = matched_sil_fit["fit"].invert(sil_ratio)
+                        reference_basis = "Matched SIL-IS calculated concentration"
+                    else:
+                        qref = np.full_like(qnom, np.nan, dtype=float)
+                        reference_basis = "Matched SIL-IS unavailable"
+                by_level, qs = _qc_summary(qcalc, qref)
             else:
                 by_level, qs = pd.DataFrame(), {}
 
@@ -466,8 +562,21 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                 and qs["qc_max_abs_bias_pct"] <= criteria.max_qc_abs_bias
                 and (not np.isfinite(qs.get("qc_max_cv_pct", np.nan)) or qs["qc_max_cv_pct"] <= criteria.max_qc_cv)
             )
+            is_class = str(is_meta.loc[is_name, "IS Class"]) if len(is_meta) and is_name in is_meta.index else "Surrogate"
+            paired_analyte = str(is_meta.loc[is_name, "Paired Analyte"]) if len(is_meta) and is_name in is_meta.index else ""
+            rt_delta = np.nan
+            if not cal_rt.empty and analyte in cal_rt.columns and is_name in cal_rt.columns:
+                ridx = cal_rt.index.intersection(cal_nom.index)
+                art = _num(cal_rt.loc[ridx, analyte]); irt = _num(cal_rt.loc[ridx, is_name])
+                rv = np.isfinite(art) & np.isfinite(irt)
+                if rv.any():
+                    rt_delta = float(np.nanmedian(np.abs((art[rv] - irt[rv]).to_numpy(float))))
             row = {
                 "Analyte": analyte, "Group": groups.get(analyte, analyte), "Internal Standard": is_name,
+                "IS Class": is_class, "Paired Analyte": paired_analyte,
+                "Matched SIL-IS": bool(is_class == "SIL-IS" and paired_analyte == str(analyte)),
+                "Median |ΔRT|": rt_delta,
+                "QC Reference": reference_basis if 'reference_basis' in locals() else criteria.qc_reference_basis,
                 "AMR Source": stage1_sources.get(str(analyte), "Automatic"),
                 "Pass": bool(m["pass_cal"] and qc_pass), "Calibration Pass": bool(m["pass_cal"]), "QC Pass": qc_pass,
                 "n Cal": m["n_cal"], "LLOQ": m["lloq"], "ULOQ": m["uloq"], "Span Ratio": m["uloq"] / m["lloq"],
@@ -487,6 +596,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
     return {
         "ranking": ranking, "stage1": pd.DataFrame(stage1_rows),
         "criteria": criteria, "analytes": analytes, "internal_standards": is_names,
+        "is_metadata": is_meta.reset_index() if len(is_meta) else pd.DataFrame(),
         "pair_count_requested": int(len(analytes) * len(is_names)),
         "qc_sample_mapping": qc_sample_mapping,
         "user_amr": user_amr,
@@ -495,6 +605,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
         "manual_exclusions": {},
         "_cache": {
             "cal_area": cal_area, "qc_area": qc_area,
+            "cal_rt": cal_rt, "qc_rt": qc_rt,
             "cal_nom": cal_nom, "qc_nom": qc_nom, "qc_meta": qc_meta,
         },
     }
@@ -510,6 +621,7 @@ def compute_pair_detail(result, analyte, is_name):
     criteria = result["criteria"]
     cache = result.get("_cache", {})
     cal_area = cache.get("cal_area"); qc_area = cache.get("qc_area")
+    cal_rt = cache.get("cal_rt"); qc_rt = cache.get("qc_rt")
     cal_nom = cache.get("cal_nom"); qc_nom = cache.get("qc_nom")
     qc_meta = cache.get("qc_meta")
     if any(x is None for x in (cal_area, qc_area, cal_nom, qc_nom)):
@@ -537,6 +649,19 @@ def compute_pair_detail(result, analyte, is_name):
         raise ValueError("The selected pair could not be fitted.")
     fit = metrics["fit"]
 
+    is_meta = result.get("is_metadata", pd.DataFrame())
+    matched_sil = ""
+    if is_meta is not None and len(is_meta):
+        sil = is_meta[
+            is_meta["IS Class"].astype(str).eq("SIL-IS")
+            & is_meta["Paired Analyte"].astype(str).eq(str(analyte))
+        ]
+        if len(sil):
+            matched_sil = str(sil.iloc[0]["Component"])
+    matched_sil_metrics = _fit_pair_from_cache(
+        cal_area, cal_nom, analyte, matched_sil, active_levels, criteria
+    ) if matched_sil else None
+
     qidx = qc_area.index.intersection(qc_nom.index)
     sample_detail = pd.DataFrame()
     by_level = pd.DataFrame()
@@ -547,7 +672,19 @@ def compute_pair_detail(result, analyte, is_name):
         qratio = (qa[qvalid] / qi[qvalid]).to_numpy(float)
         qnom = qn[qvalid].to_numpy(float)
         qcalc = fit.invert(qratio)
-        by_level, _ = _qc_summary(qcalc, qnom)
+        qref = qnom.copy()
+        reference_basis = "Nominal concentration"
+        if criteria.qc_reference_basis == "Matched SIL-IS calculated concentration":
+            if matched_sil_metrics is not None and matched_sil in qc_area.columns:
+                qsil = _num(qc_area.loc[qidx, matched_sil])
+                sil_area = qsil[qvalid].to_numpy(float)
+                ana_area = qa[qvalid].to_numpy(float)
+                qref = matched_sil_metrics["fit"].invert(ana_area / sil_area)
+                reference_basis = "Matched SIL-IS calculated concentration"
+            else:
+                qref = np.full_like(qnom, np.nan, dtype=float)
+                reference_basis = "Matched SIL-IS unavailable"
+        by_level, _ = _qc_summary(qcalc, qref)
         selected_index = qidx[qvalid]
         if qc_meta is not None:
             md = qc_meta.reindex(selected_index)
@@ -572,9 +709,17 @@ def compute_pair_detail(result, analyte, is_name):
                 "Ratio": qratio,
                 "Calculated": qcalc,
             })
+        sample_detail["Reference concentration"] = qref
+        sample_detail["Reference basis"] = reference_basis
+        if qc_rt is not None and not qc_rt.empty:
+            art = _num(qc_rt.reindex(selected_index)[analyte]) if analyte in qc_rt.columns else pd.Series(np.nan, index=selected_index)
+            irt = _num(qc_rt.reindex(selected_index)[is_name]) if is_name in qc_rt.columns else pd.Series(np.nan, index=selected_index)
+            sample_detail["Analyte RT"] = art.to_numpy(float)
+            sample_detail["IS RT"] = irt.to_numpy(float)
+            sample_detail["ΔRT"] = sample_detail["Analyte RT"] - sample_detail["IS RT"]
         sample_detail["Bias %"] = (
-            (sample_detail["Calculated"] - sample_detail["Nominal"])
-            / sample_detail["Nominal"] * 100.0
+            (sample_detail["Calculated"] - sample_detail["Reference concentration"])
+            / sample_detail["Reference concentration"] * 100.0
         )
         sample_detail["|Bias| %"] = np.abs(sample_detail["Bias %"])
         sample_detail["Individual Pass"] = (
@@ -595,6 +740,13 @@ def compute_pair_detail(result, analyte, is_name):
         "Ratio": ratio,
         "Back-calculated": backcalc,
     })
+    if cal_rt is not None and not cal_rt.empty:
+        cidx = idx[valid]
+        art = _num(cal_rt.reindex(cidx)[analyte]) if analyte in cal_rt.columns else pd.Series(np.nan, index=cidx)
+        irt = _num(cal_rt.reindex(cidx)[is_name]) if is_name in cal_rt.columns else pd.Series(np.nan, index=cidx)
+        cal_detail["Analyte RT"] = art.to_numpy(float)
+        cal_detail["IS RT"] = irt.to_numpy(float)
+        cal_detail["ΔRT"] = cal_detail["Analyte RT"] - cal_detail["IS RT"]
     cal_detail["Bias %"] = (cal_detail["Back-calculated"] - cal_detail["Nominal"]) / cal_detail["Nominal"] * 100.0
     cal_detail["|Bias| %"] = np.abs(cal_detail["Bias %"])
     # Add excluded Stage-1 levels back to the table for transparent manual editing.
@@ -640,7 +792,10 @@ def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
     r2 = float(fit.stats.get("fit_r2", np.nan))
     wr2 = float(fit.stats.get("weighted_r2", np.nan))
     qc = detail["qc_samples"]
-    by, qs = _qc_summary(qc["Calculated"].to_numpy(float), qc["Nominal"].to_numpy(float)) if not qc.empty else (pd.DataFrame(), {})
+    by, qs = _qc_summary(
+        qc["Calculated"].to_numpy(float),
+        qc["Reference concentration"].to_numpy(float) if "Reference concentration" in qc.columns else qc["Nominal"].to_numpy(float),
+    ) if not qc.empty else (pd.DataFrame(), {})
     qc_pass = bool(qs) and (
         np.isfinite(qs.get("qc_mean_abs_bias_pct", np.nan))
         and qs["qc_mean_abs_bias_pct"] <= criteria.max_qc_mean_abs_bias
