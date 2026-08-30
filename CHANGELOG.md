@@ -2,6 +2,18 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.19] - 2026-08-30
+
+### Project save/open framework
+- Added a portable versioned `.regproj` project format for saving analysis sessions.
+- Project archives store JSON/table data only; no Python pickle/code objects are serialized.
+- Project files embed normalized input data so reopening does not depend on the original CSV/TargetLynx file remaining at the same path.
+- Added Save Project and Open Project controls to Surrogate IS Analysis.
+- Surrogate IS projects preserve component mapping, QC sample mapping, user-defined AMRs, regression/QC criteria, calibrator-source mode, manual pair calibrator exclusions, ranking filters, visible/hidden columns, ranking column order, selected pair, heatmap metric, and heatmap annotation state.
+- When a completed project is reopened, the analysis is reconstructed from the saved inputs/settings and manual pair edits are reapplied rather than restoring stale serialized fit objects.
+- Project manifests include schema version and originating app version for forward-compatible evolution.
+- The project I/O layer is module-agnostic so additional Regression App workspaces can adopt the same `.regproj` format in future releases.
+
 ## [0.5.18] - 2026-08-29
 
 ### Heatmap metric selection, annotations, and export
