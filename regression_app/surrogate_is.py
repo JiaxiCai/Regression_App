@@ -530,6 +530,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
             m = _fit_candidate(xfit, ratio, criteria)
             if m is None: continue
             fit = m["fit"]
+            reference_basis = criteria.qc_reference_basis
 
             qidx = qc_area.index.intersection(qc_nom.index)
             if analyte in qc_area.columns and is_name in qc_area.columns and analyte in qc_nom.columns:
@@ -576,7 +577,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                 "IS Class": is_class, "Paired Analyte": paired_analyte,
                 "Matched SIL-IS": bool(is_class == "SIL-IS" and paired_analyte == str(analyte)),
                 "Median |ΔRT|": rt_delta,
-                "QC Reference": reference_basis if 'reference_basis' in locals() else criteria.qc_reference_basis,
+                "QC Reference": reference_basis,
                 "AMR Source": stage1_sources.get(str(analyte), "Automatic"),
                 "Pass": bool(m["pass_cal"] and qc_pass), "Calibration Pass": bool(m["pass_cal"]), "QC Pass": qc_pass,
                 "n Cal": m["n_cal"], "LLOQ": m["lloq"], "ULOQ": m["uloq"], "Span Ratio": m["uloq"] / m["lloq"],
