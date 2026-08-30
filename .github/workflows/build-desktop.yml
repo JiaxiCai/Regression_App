@@ -87,7 +87,7 @@ jobs:
         shell: pwsh
         run: |
           @"
-          Regression App v0.5.21 - Windows
+          Regression App v0.5.22 - Windows
           Extract RegressionApp-Windows.zip completely, then run RegressionApp\RegressionApp.exe.
           No Python installation is required.
           Do not run the EXE from inside the ZIP or copy it away from _internal.
