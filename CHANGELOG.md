@@ -2,6 +2,15 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.27] - 2026-08-30
+
+### Matched SIL-IS reference range policy
+- Added a `Matched SIL range` option when QC reference is `Matched SIL-IS calculated concentration`.
+- `Allow extrapolation` (default) uses the matched SIL-IS regression equation for QC concentrations outside the matched SIL-IS retained AMR, preserving the assumption that the matched SIL-IS remains the best correction reference across concentrations.
+- `Restrict to matched SIL-IS AMR` calculates matched-SIL bias only for QC levels inside both the surrogate AMR and matched SIL-IS AMR; out-of-reference-range levels are excluded from matched-SIL bias/CV acceptance calculations rather than extrapolated.
+- The selected policy is applied consistently during exhaustive contiguous pair search, final ranking metrics, and Pair Detail recalculation.
+- Pair Ranking records the matched-SIL range policy, and project files preserve the selected option.
+
 ## [0.5.26] - 2026-08-30
 
 ### Heatmap layout, failed-pair rendering, and matched-SIL reference consistency
