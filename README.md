@@ -1,4 +1,4 @@
-# Regression App v0.5.21
+# Regression App v0.5.22
 
 A cross-platform PySide6 desktop workbench for analytical and clinical laboratory data analysis, with emphasis on calibration, method validation, LC-MS/MS workflows, and transparent statistical reporting.
 
@@ -60,6 +60,7 @@ Systematic analyte × internal-standard benchmarking for LC-MS/MS workflows.
 - Component Mapping for Analyte, Internal Standard, or Ignore assignments
 - Global regression-model and origin defaults with per-analyte overrides for multiplexed panels
 - Origin handling supports Exclude, Include, or Force; analytes can independently choose any supported linear, quadratic, or Padé calibration model
+- Included origin uses the lowest calibrator's reciprocal weight for 1/x and 1/x² fits, matching TargetLynx/QuanLynx behavior
 - Automatic qualifier exclusion for generic TargetLynx-style exports
 - Editable analyte ↔ stable-isotope-labeled internal standard assignments
 - Tracks internal-standard identity separately from pair-level role
