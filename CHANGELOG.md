@@ -2,6 +2,18 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.11] - 2026-08-29
+
+### Surrogate IS performance and stability
+- Reduced bulk-analysis temporary object creation by converting aligned calibration, QC, and RT wide tables to NumPy arrays once before analyte × IS iteration.
+- Replaced per-pair pandas QC DataFrame/groupby work in the bulk ranking path with lightweight NumPy QC metrics.
+- Preserves detailed pandas QC tables only for on-demand Pair Detail and export.
+- Aligns area, nominal, RT, and metadata tables once before NumPy caching so speed improvements do not change sample matching.
+- Pair Ranking now renders one analyte at a time instead of materializing thousands of Qt table rows and >100,000 QTableWidgetItems at once.
+- Added an analyte selector and displayed/total pair count; the complete ranking remains available in memory, heatmaps, and workbook export.
+- Manual refits and AMR synchronization refresh only the currently displayed analyte ranking.
+- Corrected SIL-reference QC precision handling: QC bias can use the matched SIL-derived reference while QC CV remains grouped by nominal QC level.
+
 ## [0.5.10] - 2026-08-29
 
 ### Surrogate IS retention time, SIL classification, and QC reference basis
