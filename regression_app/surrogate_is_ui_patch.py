@@ -283,8 +283,11 @@ def _build_tab(w):
     w.sis_ranking.itemSelectionChanged.connect(lambda: _selection_changed(w))
     rl.addWidget(w.sis_ranking); outtabs.addTab(rank_page, "Pair Ranking")
 
-    heat_page = QWidget(); hl = QVBoxLayout(heat_page); hc = QHBoxLayout()
-    hc.addWidget(QLabel("Heatmap value")); w.sis_heat_metric = QComboBox()
+    heat_page = QWidget(); heat_root = QHBoxLayout(heat_page)
+
+    heat_controls_panel = QWidget(); hcp = QVBoxLayout(heat_controls_panel)
+    hcp.addWidget(QLabel("Heatmap value"))
+    w.sis_heat_metric = QComboBox()
     w.sis_heat_metric.addItems([
         "Fit R2", "Weighted R2",
         "Min Cal Bias %", "Max Cal Bias %",
@@ -296,9 +299,9 @@ def _build_tab(w):
         "Stage 2 Iterations", "Stage 2 Removed",
     ])
     w.sis_heat_metric.currentTextChanged.connect(lambda _: _draw_heatmap(w))
-    hc.addWidget(w.sis_heat_metric)
+    hcp.addWidget(w.sis_heat_metric)
 
-    hc.addWidget(QLabel("Order"))
+    hcp.addWidget(QLabel("Order"))
     w.sis_heat_order = QComboBox()
     w.sis_heat_order.addItems(["Retention time", "Alphabetical"])
     w.sis_heat_order.setCurrentText("Retention time")
@@ -307,11 +310,11 @@ def _build_tab(w):
         "components without a finite RT are placed last."
     )
     w.sis_heat_order.currentTextChanged.connect(lambda _: _draw_heatmap(w))
-    hc.addWidget(w.sis_heat_order)
+    hcp.addWidget(w.sis_heat_order)
 
     w.sis_heat_annotate = QCheckBox("Annotate values")
     w.sis_heat_annotate.toggled.connect(lambda _: _draw_heatmap(w))
-    hc.addWidget(w.sis_heat_annotate)
+    hcp.addWidget(w.sis_heat_annotate)
 
     w.sis_heat_grey_fail = QCheckBox("Grey out failed pairs")
     w.sis_heat_grey_fail.setChecked(False)
@@ -320,18 +323,24 @@ def _build_tab(w):
         "and optional annotations."
     )
     w.sis_heat_grey_fail.toggled.connect(lambda _: _draw_heatmap(w))
-    hc.addWidget(w.sis_heat_grey_fail)
+    hcp.addWidget(w.sis_heat_grey_fail)
 
     export_png = QPushButton("Export PNG")
     export_png.clicked.connect(lambda: _export_heatmap(w, "png"))
-    hc.addWidget(export_png)
+    hcp.addWidget(export_png)
     export_svg = QPushButton("Export SVG")
     export_svg.clicked.connect(lambda: _export_heatmap(w, "svg"))
-    hc.addWidget(export_svg)
+    hcp.addWidget(export_svg)
+    hcp.addStretch()
 
-    hc.addStretch(); hl.addLayout(hc)
-    w.sis_heat_fig = Figure(figsize=(10, 6), dpi=100); w.sis_heat_canvas = FigureCanvas(w.sis_heat_fig)
-    hl.addWidget(NavigationToolbar(w.sis_heat_canvas, heat_page)); hl.addWidget(w.sis_heat_canvas, 1)
+    heat_plot_panel = QWidget(); hpp = QVBoxLayout(heat_plot_panel)
+    w.sis_heat_fig = Figure(figsize=(12, 8), dpi=100)
+    w.sis_heat_canvas = FigureCanvas(w.sis_heat_fig)
+    hpp.addWidget(NavigationToolbar(w.sis_heat_canvas, heat_plot_panel))
+    hpp.addWidget(w.sis_heat_canvas, 1)
+
+    heat_root.addWidget(heat_controls_panel, 0)
+    heat_root.addWidget(heat_plot_panel, 1)
     outtabs.addTab(heat_page, "Heatmap")
 
     detail_page = QWidget(); dl = QVBoxLayout(detail_page)
@@ -1447,44 +1456,32 @@ def _draw_heatmap(w):
 
     values = mat.to_numpy(float)
     ax = fig.add_subplot(111)
+    im = ax.imshow(values, aspect="auto")
+    colorbar_mappable = im
 
     if getattr(w, "sis_heat_grey_fail", None) is not None and w.sis_heat_grey_fail.isChecked():
+        from matplotlib.patches import Rectangle
+
         rank = w.sis_result.get("ranking", pd.DataFrame())
         pass_lookup = {}
         if rank is not None and not rank.empty and "Pass" in rank.columns:
-            pass_lookup = {
-                (str(rec["Analyte"]), str(rec["Internal Standard"])): bool(rec["Pass"])
-                for _, rec in rank.iterrows()
-            }
+            for _, rec in rank.iterrows():
+                raw_pass = rec["Pass"]
+                if isinstance(raw_pass, (bool, np.bool_)):
+                    passed = bool(raw_pass)
+                else:
+                    passed = str(raw_pass).strip().casefold() in {
+                        "true", "pass", "passed", "1", "yes"
+                    }
+                pass_lookup[(str(rec["Analyte"]), str(rec["Internal Standard"]))] = passed
 
-        import matplotlib.cm as cm
-        import matplotlib.colors as mcolors
-
-        base_cmap = cm.get_cmap()
-        finite = values[np.isfinite(values)]
-        if finite.size:
-            vmin = float(np.nanmin(finite)); vmax = float(np.nanmax(finite))
-            if np.isclose(vmin, vmax):
-                vmax = vmin + 1.0
-            norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
-            rgba = base_cmap(norm(values))
-        else:
-            norm = mcolors.Normalize(vmin=0.0, vmax=1.0)
-            rgba = np.zeros(values.shape + (4,), dtype=float)
-
-        failed = np.zeros(values.shape, dtype=bool)
         for r, analyte in enumerate(mat.index):
             for c, is_name in enumerate(mat.columns):
-                failed[r, c] = not pass_lookup.get((str(analyte), str(is_name)), False)
-
-        rgba[failed] = np.array([0.72, 0.72, 0.72, 1.0])
-        im = ax.imshow(rgba, aspect="auto")
-        scalar = cm.ScalarMappable(norm=norm, cmap=base_cmap)
-        scalar.set_array([])
-        colorbar_mappable = scalar
-    else:
-        im = ax.imshow(values, aspect="auto")
-        colorbar_mappable = im
+                if not pass_lookup.get((str(analyte), str(is_name)), False):
+                    ax.add_patch(Rectangle(
+                        (c - 0.5, r - 0.5), 1.0, 1.0,
+                        facecolor="0.72", edgecolor="none", zorder=2,
+                    ))
     ax.set_xticks(range(len(mat.columns)))
     ax.set_xticklabels(mat.columns, rotation=45, ha="right", fontsize=8)
     ax.set_yticks(range(len(mat.index)))
@@ -1496,7 +1493,7 @@ def _draw_heatmap(w):
             for c in range(values.shape[1]):
                 text_value = _heatmap_annotation_text(metric, values[r, c])
                 if text_value:
-                    ax.text(c, r, text_value, ha="center", va="center", fontsize=6)
+                    ax.text(c, r, text_value, ha="center", va="center", fontsize=6, zorder=3)
 
     fig.colorbar(colorbar_mappable, ax=ax, shrink=0.8)
     fig.tight_layout()
