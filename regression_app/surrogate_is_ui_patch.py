@@ -15,8 +15,8 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 
 from .surrogate_is import (
     SurrogateCriteria, load_surrogate_data, analyze_surrogate_is,
-    component_mapping_table, pair_metric_matrix, compute_pair_detail,
-    export_surrogate_workbook,
+    component_mapping_table, qc_sample_mapping_table, pair_metric_matrix,
+    compute_pair_detail, export_surrogate_workbook,
 )
 from .ui_helpers import SortableTableItem, configure_sortable_table, make_table_filter_bar
 
@@ -47,6 +47,7 @@ def install(MainWindow):
         original_init(self, *args, **kwargs)
         self.sis_data = None; self.sis_result = None; self.sis_path = None
         self.sis_component_mapping = None
+        self.sis_qc_mapping = None
         _build_tab(self)
     MainWindow.__init__ = wrapped_init
 
@@ -124,6 +125,32 @@ def _build_tab(w):
     ml.addWidget(w.sis_mapping_table, 1)
     outtabs.addTab(mapping_page, "Component Mapping")
 
+    qcmap_page = QWidget(); qml = QVBoxLayout(qcmap_page)
+    qcmap_intro = QLabel(
+        "Choose which QC samples are used for surrogate-IS bias and precision calculations. "
+        "Unchecked samples are ignored for QC pass/fail and ranking; calibration fitting is unchanged."
+    )
+    qcmap_intro.setWordWrap(True); qml.addWidget(qcmap_intro)
+    qma = QHBoxLayout()
+    reset_qc = QPushButton("Reset to Automatic")
+    reset_qc.clicked.connect(lambda: _reset_qc_mapping(w)); qma.addWidget(reset_qc)
+    include_qc = QPushButton("Include All")
+    include_qc.clicked.connect(lambda: _set_all_qc_included(w, True)); qma.addWidget(include_qc)
+    exclude_qc = QPushButton("Exclude All")
+    exclude_qc.clicked.connect(lambda: _set_all_qc_included(w, False)); qma.addWidget(exclude_qc)
+    qma.addStretch()
+    w.sis_qc_mapping_summary = QLabel("Load a dataset to review QC samples.")
+    qma.addWidget(w.sis_qc_mapping_summary)
+    qml.addLayout(qma)
+    w.sis_qc_mapping_table = QTableWidget(0, 5)
+    w.sis_qc_mapping_table.setHorizontalHeaderLabels([
+        "Include", "Sample Name", "Sample Type", "Automatic Include", "Sample Key"
+    ])
+    w.sis_qc_mapping_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+    w.sis_qc_mapping_table.horizontalHeader().setStretchLastSection(True)
+    qml.addWidget(w.sis_qc_mapping_table, 1)
+    outtabs.addTab(qcmap_page, "QC Sample Mapping")
+
     rank_page = QWidget(); rl = QVBoxLayout(rank_page)
     w.sis_ranking = QTableWidget(); w.sis_ranking.setSelectionBehavior(QTableWidget.SelectRows)
     w.sis_ranking.setSelectionMode(QTableWidget.SingleSelection)
@@ -147,6 +174,15 @@ def _build_tab(w):
     w.sis_detail_fig = Figure(figsize=(10, 6), dpi=100); w.sis_detail_canvas = FigureCanvas(w.sis_detail_fig)
     dl.addWidget(NavigationToolbar(w.sis_detail_canvas, detail_page)); dl.addWidget(w.sis_detail_canvas, 1)
     outtabs.addTab(detail_page, "Pair Detail")
+
+    qc_detail_page = QWidget(); qdl = QVBoxLayout(qc_detail_page)
+    w.sis_qc_detail_label = QLabel("Select a pair from Pair Ranking.")
+    w.sis_qc_detail_label.setWordWrap(True); qdl.addWidget(w.sis_qc_detail_label)
+    w.sis_qc_detail = QTableWidget()
+    configure_sortable_table(w.sis_qc_detail)
+    qdl.addWidget(make_table_filter_bar(w.sis_qc_detail, qc_detail_page))
+    qdl.addWidget(w.sis_qc_detail, 1)
+    outtabs.addTab(qc_detail_page, "QC Individual Bias")
 
     stage_page = QWidget(); sl = QVBoxLayout(stage_page); w.sis_stage1 = QTableWidget()
     configure_sortable_table(w.sis_stage1)
@@ -177,8 +213,10 @@ def _load(w):
     try:
         data, meta = load_surrogate_data(path); w.sis_data = data; w.sis_path = path
         w.sis_component_mapping = component_mapping_table(data)
+        w.sis_qc_mapping = qc_sample_mapping_table(data)
         w.sis_file.setText(Path(path).name)
         _populate_mapping(w)
+        _populate_qc_mapping(w)
         n_an = data.loc[data["Component Role"] == "Analyte", "Component"].nunique()
         n_is = data.loc[data["Component Role"] == "IS", "Component"].nunique()
         w.sis_note.setText(
@@ -279,11 +317,85 @@ def _set_all_mapping_included(w, included):
     _update_mapping_summary(w)
 
 
+def _populate_qc_mapping(w):
+    mapping = w.sis_qc_mapping
+    if mapping is None:
+        return
+    table = w.sis_qc_mapping_table
+    table.blockSignals(True)
+    table.setRowCount(len(mapping))
+    for r, (_, rec) in enumerate(mapping.iterrows()):
+        include = QTableWidgetItem("")
+        include.setFlags(include.flags() | Qt.ItemIsUserCheckable)
+        include.setCheckState(Qt.Checked if bool(rec["Include"]) else Qt.Unchecked)
+        table.setItem(r, 0, include)
+        for c, key in [(1, "Sample Name"), (2, "Sample Type"), (4, "Sample Key")]:
+            item = QTableWidgetItem(str(rec[key]))
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+            table.setItem(r, c, item)
+        auto = QTableWidgetItem("YES" if bool(rec["Automatic Include"]) else "NO")
+        auto.setFlags(auto.flags() & ~Qt.ItemIsEditable)
+        table.setItem(r, 3, auto)
+    table.blockSignals(False)
+    try:
+        table.itemChanged.disconnect()
+    except Exception:
+        pass
+    table.itemChanged.connect(lambda item: _update_qc_mapping_summary(w) if item.column() == 0 else None)
+    _update_qc_mapping_summary(w)
+
+
+def _qc_mapping_from_ui(w):
+    import pandas as pd
+    rows = []
+    table = w.sis_qc_mapping_table
+    for r in range(table.rowCount()):
+        rows.append({
+            "Sample Key": table.item(r, 4).text(),
+            "Sample Name": table.item(r, 1).text(),
+            "Sample Type": table.item(r, 2).text(),
+            "Automatic Include": table.item(r, 3).text() == "YES",
+            "Include": table.item(r, 0).checkState() == Qt.Checked,
+        })
+    return pd.DataFrame(rows)
+
+
+def _update_qc_mapping_summary(w):
+    if not hasattr(w, "sis_qc_mapping_table"):
+        return
+    table = w.sis_qc_mapping_table
+    total = table.rowCount()
+    included = sum(
+        1 for r in range(total)
+        if table.item(r, 0) is not None and table.item(r, 0).checkState() == Qt.Checked
+    )
+    w.sis_qc_mapping_summary.setText(
+        f"{included:,} of {total:,} QC sample(s) included"
+    )
+
+
+def _reset_qc_mapping(w):
+    if w.sis_qc_mapping is not None:
+        _populate_qc_mapping(w)
+
+
+def _set_all_qc_included(w, included):
+    table = w.sis_qc_mapping_table
+    table.blockSignals(True)
+    for r in range(table.rowCount()):
+        item = table.item(r, 0)
+        if item is not None:
+            item.setCheckState(Qt.Checked if included else Qt.Unchecked)
+    table.blockSignals(False)
+    _update_qc_mapping_summary(w)
+
+
 def _run(w):
     if w.sis_data is None:
         QMessageBox.information(w, "No dataset", "Load a surrogate-IS dataset first."); return
     try:
         mapping = _mapping_from_ui(w)
+        qc_mapping = _qc_mapping_from_ui(w)
         included = mapping[mapping["Include"].astype(bool)]
         n_an = int((included["Role"] == "Analyte").sum())
         n_is = int((included["Role"] == "IS").sum())
@@ -307,7 +419,8 @@ def _run(w):
             if answer != QMessageBox.Yes:
                 return
         w.sis_result = analyze_surrogate_is(
-            w.sis_data, _criteria(w), component_mapping=mapping
+            w.sis_data, _criteria(w), component_mapping=mapping,
+            qc_sample_mapping=qc_mapping
         ); rank = w.sis_result["ranking"]
         _fill_table(w.sis_ranking, rank); _fill_table(w.sis_stage1, w.sis_result["stage1"])
         passed = int(rank["Pass"].sum()) if not rank.empty else 0
@@ -389,6 +502,13 @@ def _selection_changed(w):
         w.sis_detail_label.setText(f"Could not build pair detail: {exc}")
         return
     s = detail["summary"]
+    qc_samples = detail.get("qc_samples")
+    if qc_samples is not None:
+        _fill_table(w.sis_qc_detail, qc_samples)
+        w.sis_qc_detail_label.setText(
+            f"{pair[0]} / {pair[1]} — {len(qc_samples)} included QC result(s); "
+            f"individual pass criterion: |bias| ≤ {w.sis_qc_max_bias.value():g}%."
+        )
     w.sis_detail_label.setText(
         f"{pair[0]} / {pair[1]} — {'PASS' if s['Pass'] else 'FAIL'}; "
         f"range {s['LLOQ']:g}–{s['ULOQ']:g}; max cal |bias| {s['Max Cal |Bias| %']:.2f}%; "
