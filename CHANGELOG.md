@@ -2,6 +2,19 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.10] - 2026-08-29
+
+### Surrogate IS retention time, SIL classification, and QC reference basis
+- Preserves retention time (RT) from TargetLynx and generic long-format input when available.
+- Pair Ranking now tracks internal-standard class, paired analyte, whether the pair is the matched SIL-IS, and median absolute analyte–IS retention-time difference.
+- Pair Detail and QC Individual Bias include analyte RT, IS RT, and ΔRT for individual observations when RT is available.
+- Component Mapping now allows each internal standard to be classified as SIL-IS or Surrogate and assigned to a paired analyte.
+- Stable-isotope naming patterns such as D3, 13C, 15N, 18O, and 34S are used to propose SIL-IS pairings automatically; assignments remain editable.
+- Added a QC reference selector with Nominal concentration and Matched SIL-IS calculated concentration options.
+- When matched SIL-IS reference is selected, surrogate QC bias is calculated against the concentration obtained from the analyte's paired SIL-IS calibration curve for the same QC sample.
+- Missing/unusable matched SIL-IS references are reported as unavailable rather than silently falling back to nominal concentration.
+- Manual pair refits and AMR synchronization preserve the selected QC reference basis.
+
 ## [0.5.9] - 2026-08-29
 
 ### Surrogate IS AMR synchronization and richer QC identification
