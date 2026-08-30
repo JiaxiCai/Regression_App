@@ -2,6 +2,14 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.21] - 2026-08-30
+
+### Analyte Fit Settings population fix
+- Fixed a v0.5.20 UI regression where the Analyte Fit Settings tab could remain empty after loading a surrogate-IS dataset.
+- Normal dataset loading now explicitly populates the analyte fit table after Component Mapping is built.
+- Analyte Fit Settings now refresh automatically when component Include status or Role changes.
+- Existing per-analyte model/origin overrides are preserved for analytes that remain selected during mapping edits.
+
 ## [0.5.20] - 2026-08-30
 
 ### Per-analyte regression model and origin handling
