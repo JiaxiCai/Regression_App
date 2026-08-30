@@ -594,6 +594,7 @@ def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
         and qs["qc_max_abs_bias_pct"] <= criteria.max_qc_abs_bias
         and (not np.isfinite(qs.get("qc_max_cv_pct", np.nan)) or qs["qc_max_cv_pct"] <= criteria.max_qc_cv)
     )
+    active = cal.loc[cal["Use"], "Nominal"].to_numpy(float)
     cal_pass = (
         len(active) >= criteria.min_calibrators
         and np.isfinite(max_bias) and max_bias <= criteria.max_calibrator_bias
@@ -606,7 +607,6 @@ def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
         & ranking["Internal Standard"].astype(str).eq(str(is_name))
     )
     if mask.any():
-        active = cal.loc[cal["Use"], "Nominal"].to_numpy(float)
         updates = {
             "AMR Source": "Manual edited" if excluded_nominals else result.get("stage1_sources", {}).get(str(analyte), "Automatic"),
             "Pass": bool(cal_pass and qc_pass),
