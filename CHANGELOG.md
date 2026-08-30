@@ -2,6 +2,16 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.33] - 2026-08-30
+
+### Updated default surrogate acceptance criteria
+- Minimum Fit R² default: 0.995.
+- Maximum calibrator absolute bias default: 15%.
+- Maximum QC individual absolute bias default: 20%.
+- Maximum QC CV default: 10%.
+- Maximum QC mean absolute bias remains 20%.
+- Updated both the core `SurrogateCriteria` defaults and the UI defaults so new analyses start consistently.
+
 ## [0.5.32] - 2026-08-30
 
 ### More robust Surrogate IS workbook export
