@@ -2,6 +2,17 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.6] - 2026-08-29
+
+### Surrogate IS QC sample mapping and individual bias drill-down
+- Added a QC Sample Mapping tab with one Include/Exclude control per detected QC sample.
+- Calibration fitting is unaffected by QC exclusions; unchecked samples are omitted only from QC bias, precision, pass/fail, and ranking calculations.
+- QC sample names containing `Low IS` are conservatively auto-excluded, while all assignments remain visible and user-editable.
+- Added Reset to Automatic, Include All, and Exclude All controls for QC sample selection.
+- Added a QC Individual Bias tab that updates with the selected analyte × IS pair.
+- Individual QC output includes sample key/name, nominal concentration, analyte/IS ratio, calculated concentration, signed bias, absolute bias, and individual pass/fail against the configured QC individual-bias limit.
+- Pair-level QC summaries and Excel export continue to use only the currently included QC samples.
+
 ## [0.5.5] - 2026-08-27
 
 ### Surrogate IS performance and safer auto-mapping
