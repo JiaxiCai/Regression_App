@@ -20,6 +20,7 @@ class SurrogateCriteria:
     max_qc_abs_bias: float = 30.0
     max_qc_cv: float = 20.0
     qc_reference_basis: str = "Nominal concentration"
+    matched_sil_range_policy: str = "Allow extrapolation"
     origin_mode: str = ORIGIN_EXCLUDE
 
 
@@ -853,6 +854,15 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                         qnom_all = qn_all[qbase]
                         sil_ratio_all = qa_all[qbase] / qsil_all[qbase]
                         qref_all = matched_sil_fit["fit"].invert(sil_ratio_all)
+                        if analyte_criteria.matched_sil_range_policy == "Restrict to matched SIL-IS AMR":
+                            in_ref_amr = (
+                                qnom_all >= matched_sil_fit["lloq"]
+                            ) & (
+                                qnom_all <= matched_sil_fit["uloq"]
+                            )
+                            qratio_all = qratio_all[in_ref_amr]
+                            qnom_all = qnom_all[in_ref_amr]
+                            qref_all = qref_all[in_ref_amr]
                     else:
                         qref_all = np.full_like(qnom_all, np.nan, dtype=float)
 
@@ -902,6 +912,12 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                         # Reusing qcalc avoids comparing two independently
                         # selected/fitted versions of the same reference curve.
                         qref = qcalc.copy()
+                        if analyte_criteria.matched_sil_range_policy == "Restrict to matched SIL-IS AMR":
+                            outside_ref_amr = (
+                                (qnom < matched_sil_fit["lloq"])
+                                | (qnom > matched_sil_fit["uloq"])
+                            )
+                            qref[outside_ref_amr] = np.nan
                         reference_basis = "Matched SIL-IS calculated concentration"
                     elif matched_sil_fit is not None and matched_sil in qc_area.columns:
                         qsil = qc_area_np[str(matched_sil)]
@@ -909,6 +925,12 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                         qa_values = qa[qvalid]
                         sil_ratio = qa_values / sil_valid_values
                         qref = matched_sil_fit["fit"].invert(sil_ratio)
+                        if analyte_criteria.matched_sil_range_policy == "Restrict to matched SIL-IS AMR":
+                            outside_ref_amr = (
+                                (qnom < matched_sil_fit["lloq"])
+                                | (qnom > matched_sil_fit["uloq"])
+                            )
+                            qref[outside_ref_amr] = np.nan
                         reference_basis = "Matched SIL-IS calculated concentration"
                     else:
                         qref = np.full_like(qnom, np.nan, dtype=float)
@@ -943,6 +965,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                 "Paired Analyte": paired_analyte,
                 "Median |ΔRT|": rt_delta,
                 "QC Reference": reference_basis,
+                "Matched SIL Range Policy": analyte_criteria.matched_sil_range_policy,
                 "AMR Source": "Stage 2 iterative" if iterative["removed_levels"] else stage1_sources.get(str(analyte), "Automatic"),
                 "Stage 2 Iterations": int(iterative["iterations"]),
                 "Stage 2 Removed": int(len(iterative["removed_levels"])),
@@ -986,6 +1009,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
         "calibrator_source_mode": calibrator_source_mode,
         "analyte_fit_settings": analyte_fit_settings or {},
         "pair_search_mode": pair_search_mode,
+        "matched_sil_range_policy": criteria.matched_sil_range_policy,
         "stage1_levels": stage1_levels,
         "stage1_sources": stage1_sources,
         "auto_pair_exclusions": auto_pair_exclusions,
@@ -1112,10 +1136,20 @@ def compute_pair_detail(result, analyte, is_name):
         reference_basis = "Nominal concentration"
         if criteria.qc_reference_basis == "Matched SIL-IS calculated concentration":
             if matched_sil_metrics is not None and matched_sil in qc_area.columns:
-                qsil = _num(qc_area.loc[qidx, matched_sil])
-                sil_area = qsil[qvalid].to_numpy(float)
-                ana_area = qa[qvalid].to_numpy(float)
-                qref = matched_sil_metrics["fit"].invert(ana_area / sil_area)
+                if str(is_name) == str(matched_sil):
+                    qref = qcalc.copy()
+                else:
+                    qsil = _num(qc_area.loc[qidx, matched_sil])
+                    sil_area = qsil[qvalid].to_numpy(float)
+                    ana_area = qa[qvalid].to_numpy(float)
+                    qref = matched_sil_metrics["fit"].invert(ana_area / sil_area)
+
+                if criteria.matched_sil_range_policy == "Restrict to matched SIL-IS AMR":
+                    outside_ref_amr = (
+                        (qnom < matched_sil_metrics["lloq"])
+                        | (qnom > matched_sil_metrics["uloq"])
+                    )
+                    qref[outside_ref_amr] = np.nan
                 reference_basis = "Matched SIL-IS calculated concentration"
             else:
                 qref = np.full_like(qnom, np.nan, dtype=float)
