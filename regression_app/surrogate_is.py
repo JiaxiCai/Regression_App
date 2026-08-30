@@ -166,6 +166,43 @@ def apply_component_mapping(normalized, mapping):
     return data.loc[keep].copy()
 
 
+def qc_sample_mapping_table(normalized):
+    """Return one editable Include/Exclude row per detected QC sample."""
+    qc = normalized.loc[_sample_type_mask(normalized["Sample Type"], "qc")].copy()
+    if qc.empty:
+        return pd.DataFrame(columns=["Sample Key", "Sample Name", "Sample Type", "Automatic Include", "Include"])
+
+    rows = []
+    for (sample_key, sample_name), g in qc.groupby(["Sample Key", "Sample Name"], sort=False):
+        name_text = str(sample_name)
+        # Conservative automatic exclusion for explicitly labeled IS-stress samples.
+        auto_include = not name_text.casefold().replace("_", " ").replace("-", " ").find("low is") >= 0
+        rows.append({
+            "Sample Key": str(sample_key),
+            "Sample Name": name_text,
+            "Sample Type": str(g["Sample Type"].iloc[0]),
+            "Automatic Include": bool(auto_include),
+            "Include": bool(auto_include),
+        })
+    return pd.DataFrame(rows)
+
+
+def apply_qc_sample_mapping(normalized, mapping):
+    """Exclude user-disabled QC samples while leaving calibrators and other rows unchanged."""
+    data = normalized.copy()
+    if mapping is None or len(mapping) == 0:
+        return data
+
+    include_map = {
+        str(row["Sample Key"]): bool(row.get("Include", True))
+        for _, row in mapping.iterrows()
+    }
+    qc_mask = _sample_type_mask(data["Sample Type"], "qc")
+    qc_keep = data["Sample Key"].astype(str).map(include_map).fillna(True).astype(bool)
+    keep = (~qc_mask) | qc_keep
+    return data.loc[keep].copy()
+
+
 def _sample_type_mask(series, kind):
     t = series.astype(str).str.strip().str.casefold()
     if kind == "cal":
@@ -274,9 +311,10 @@ def _qc_summary(calc, nominal):
     }
 
 
-def analyze_surrogate_is(normalized, criteria=None, component_mapping=None):
+def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_sample_mapping=None):
     criteria = criteria or SurrogateCriteria()
     data = apply_component_mapping(normalized, component_mapping)
+    data = apply_qc_sample_mapping(data, qc_sample_mapping)
     cal_rows = _sample_type_mask(data["Sample Type"], "cal")
     qc_rows = _sample_type_mask(data["Sample Type"], "qc")
     if not cal_rows.any(): raise ValueError("No calibrator/standard rows were detected.")
@@ -357,6 +395,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None):
         "ranking": ranking, "stage1": pd.DataFrame(stage1_rows),
         "criteria": criteria, "analytes": analytes, "internal_standards": is_names,
         "pair_count_requested": int(len(analytes) * len(is_names)),
+        "qc_sample_mapping": qc_sample_mapping,
         "stage1_levels": stage1_levels,
         "_cache": {
             "cal_area": cal_area, "qc_area": qc_area,
@@ -412,11 +451,16 @@ def compute_pair_detail(result, analyte, is_name):
             "Sample Key": [i[0] for i in qidx[qvalid]],
             "Sample Name": [i[1] for i in qidx[qvalid]],
             "Nominal": qnom,
+            "Ratio": qratio,
             "Calculated": qcalc,
         })
         sample_detail["Bias %"] = (
             (sample_detail["Calculated"] - sample_detail["Nominal"])
             / sample_detail["Nominal"] * 100.0
+        )
+        sample_detail["|Bias| %"] = np.abs(sample_detail["Bias %"])
+        sample_detail["Individual Pass"] = (
+            sample_detail["|Bias| %"] <= float(criteria.max_qc_abs_bias)
         )
 
     ranking = result.get("ranking", pd.DataFrame())
