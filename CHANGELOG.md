@@ -2,6 +2,14 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.22] - 2026-08-30
+
+### TargetLynx-compatible Include Origin weighting
+- Corrected reciprocal-weighted Include Origin behavior.
+- For 1/x and 1/x² fits, the synthetic (0,0) origin now receives the same weight as the lowest non-zero calibration standard, matching documented TargetLynx/QuanLynx behavior.
+- Previously the included origin received a fixed unit weight, which could over-weight the origin and increase low-end back-calculated bias.
+- Verified against the Amoxicillin / Amoxicillin-D4 Cal 3–10 example: Cal 3 changes from about -19% bias with the old implementation to about -12.05%, matching the TargetLynx result of -12.0%.
+
 ## [0.5.21] - 2026-08-30
 
 ### Analyte Fit Settings population fix
