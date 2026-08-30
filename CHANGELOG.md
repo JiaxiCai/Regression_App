@@ -2,6 +2,12 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.30] - 2026-08-30
+
+### Surrogate heatmap pandas import fix
+- Fixed the remaining `name 'pd' is not defined` error by moving `import pandas as pd` to module scope in `surrogate_is_ui_patch.py`.
+- Removed the heatmap's `pd.DataFrame()` fallback dependency and verified the final `main` source contains the top-level pandas import.
+
 ## [0.5.29] - 2026-08-30
 
 ### Heatmap import fix
