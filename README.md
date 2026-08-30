@@ -1,4 +1,4 @@
-# Regression App v0.5.28
+# Regression App v0.5.29
 
 A cross-platform PySide6 desktop workbench for analytical and clinical laboratory data analysis, with emphasis on calibration, method validation, LC-MS/MS workflows, and transparent statistical reporting.
 
