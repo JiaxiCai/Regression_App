@@ -2,6 +2,15 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.25] - 2026-08-30
+
+### Heatmap failed-pair de-emphasis
+- Added a `Grey out failed pairs` option to Surrogate IS heatmaps.
+- When enabled, analyte–IS pairs whose final `Pass` status is false are rendered in grey while passing pairs retain the selected metric's heatmap scale.
+- Metric values remain unchanged and optional cell annotations are still shown for failed pairs.
+- The heatmap colorbar continues to represent the metric scale for passing cells.
+- Saved Surrogate IS projects preserve the grey-out setting.
+
 ## [0.5.24] - 2026-08-30
 
 ### Retention-time ordered surrogate heatmaps
