@@ -2,6 +2,16 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.16] - 2026-08-29
+
+### Pair Ranking column customization
+- Removed the redundant `Matched SIL-IS` column from Pair Ranking; `Pair Type` already distinguishes Own SIL-IS from Surrogate.
+- Pair Ranking columns can now be reordered by dragging the table header.
+- Added a Columns menu to show or hide individual ranking fields.
+- Added Show All to restore all columns.
+- Column visibility and visual order persist during the current app session and survive ranking refreshes/manual refits.
+- Filtering and workbook export continue to use the complete underlying ranking dataset regardless of visible columns.
+
 ## [0.5.15] - 2026-08-29
 
 ### Iterative Stage 2 analyte–IS fitting
