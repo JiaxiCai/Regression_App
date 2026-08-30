@@ -405,7 +405,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
             idx = cal_area.index.intersection(cal_nom.index)
             xa = _num(cal_nom.loc[idx, analyte]); aa = _num(cal_area.loc[idx, analyte])
             ia = _num(cal_area.loc[idx, is_name])
-            valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & xa.isin(active_levels)
+            valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & xa.isin(levels)
             if int(valid.sum()) < criteria.min_calibrators: continue
             xfit = xa[valid].to_numpy(float); ratio = (aa[valid] / ia[valid]).to_numpy(float)
             m = _fit_candidate(xfit, ratio, criteria)
@@ -489,7 +489,7 @@ def compute_pair_detail(result, analyte, is_name):
     idx = cal_area.index.intersection(cal_nom.index)
     xa = _num(cal_nom.loc[idx, analyte]); aa = _num(cal_area.loc[idx, analyte])
     ia = _num(cal_area.loc[idx, is_name])
-    valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & xa.isin(levels)
+    valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & xa.isin(active_levels)
     if int(valid.sum()) < criteria.min_calibrators:
         raise ValueError("Too few usable calibrators for this pair.")
 
