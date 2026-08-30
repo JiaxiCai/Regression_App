@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
+import os
+import tempfile
 
 import numpy as np
 import pandas as pd
@@ -1465,48 +1467,69 @@ def pair_metric_matrix(result, metric="QC Mean |Bias| %", order="Retention time"
 
 
 def export_surrogate_workbook(result, path):
-    """Export compact summaries plus detailed QC rows without retaining all pairs in memory."""
-    with pd.ExcelWriter(path, engine="openpyxl") as writer:
-        result["ranking"].to_excel(writer, sheet_name="Pair Ranking", index=False)
-        result["stage1"].to_excel(writer, sheet_name="Stage 1 Analytes", index=False)
+    """Export compact summaries plus detailed QC rows using a local temporary workbook first.
 
-        level_row = 0
-        sample_row = 0
-        level_header = True
-        sample_header = True
+    Writing to a temporary local file avoids fragile long-lived file handles on
+    cloud-synced/network destinations. The completed workbook is then atomically
+    moved into place.
+    """
+    destination = Path(path).expanduser()
+    destination.parent.mkdir(parents=True, exist_ok=True)
 
-        for _, rec in result["ranking"].iterrows():
-            analyte = str(rec["Analyte"])
-            is_name = str(rec["Internal Standard"])
-            try:
-                d = compute_pair_detail(result, analyte, is_name)
-            except Exception:
-                continue
+    fd, temp_name = tempfile.mkstemp(prefix="regression_app_surrogate_", suffix=".xlsx")
+    os.close(fd)
+    temp_path = Path(temp_name)
+    try:
+        with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
+            result["ranking"].to_excel(writer, sheet_name="Pair Ranking", index=False)
+            result["stage1"].to_excel(writer, sheet_name="Stage 1 Analytes", index=False)
 
-            if not d["qc_by_level"].empty:
-                x = d["qc_by_level"].copy()
-                x.insert(0, "Internal Standard", is_name)
-                x.insert(0, "Analyte", analyte)
-                x.to_excel(
-                    writer, sheet_name="QC By Level", index=False,
-                    header=level_header, startrow=level_row,
-                )
-                level_row += len(x) + (1 if level_header else 0)
-                level_header = False
+            level_row = 0
+            sample_row = 0
+            level_header = True
+            sample_header = True
 
-            if not d["qc_samples"].empty:
-                x = d["qc_samples"].copy()
-                x.insert(0, "Internal Standard", is_name)
-                x.insert(0, "Analyte", analyte)
-                x.to_excel(
-                    writer, sheet_name="QC Samples", index=False,
-                    header=sample_header, startrow=sample_row,
-                )
-                sample_row += len(x) + (1 if sample_header else 0)
-                sample_header = False
+            for _, rec in result["ranking"].iterrows():
+                analyte = str(rec["Analyte"])
+                is_name = str(rec["Internal Standard"])
+                try:
+                    d = compute_pair_detail(result, analyte, is_name)
+                except Exception:
+                    continue
 
-        criteria = result.get("criteria")
-        if criteria is not None:
-            pd.DataFrame(
-                [{"Setting": k, "Value": v} for k, v in vars(criteria).items()]
-            ).to_excel(writer, sheet_name="Criteria", index=False)
+                if not d["qc_by_level"].empty:
+                    x = d["qc_by_level"].copy()
+                    x.insert(0, "Internal Standard", is_name)
+                    x.insert(0, "Analyte", analyte)
+                    x.to_excel(
+                        writer, sheet_name="QC By Level", index=False,
+                        header=level_header, startrow=level_row,
+                    )
+                    level_row += len(x) + (1 if level_header else 0)
+                    level_header = False
+
+                if not d["qc_samples"].empty:
+                    x = d["qc_samples"].copy()
+                    x.insert(0, "Internal Standard", is_name)
+                    x.insert(0, "Analyte", analyte)
+                    x.to_excel(
+                        writer, sheet_name="QC Samples", index=False,
+                        header=sample_header, startrow=sample_row,
+                    )
+                    sample_row += len(x) + (1 if sample_header else 0)
+                    sample_header = False
+
+            criteria = result.get("criteria")
+            if criteria is not None:
+                pd.DataFrame(
+                    [{"Setting": k, "Value": v} for k, v in vars(criteria).items()]
+                ).to_excel(writer, sheet_name="Criteria", index=False)
+
+        # Replace only after the workbook has been completely written and closed.
+        os.replace(temp_path, destination)
+    finally:
+        try:
+            if temp_path.exists():
+                temp_path.unlink()
+        except Exception:
+            pass
