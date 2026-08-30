@@ -150,6 +150,21 @@ def _build_tab(w):
     )
     g.addWidget(w.sis_qc_reference, 1, 5)
 
+    g.addWidget(QLabel("Matched SIL range"), 2, 4)
+    w.sis_sil_range_policy = QComboBox()
+    w.sis_sil_range_policy.addItems([
+        "Allow extrapolation",
+        "Restrict to matched SIL-IS AMR",
+    ])
+    w.sis_sil_range_policy.setCurrentText("Allow extrapolation")
+    w.sis_sil_range_policy.setToolTip(
+        "Only applies when QC reference is Matched SIL-IS calculated concentration. "
+        "Allow extrapolation uses the matched SIL-IS regression equation outside its retained AMR. "
+        "Restrict to matched SIL-IS AMR evaluates bias only where the surrogate and matched SIL-IS "
+        "reference ranges overlap."
+    )
+    g.addWidget(w.sis_sil_range_policy, 2, 5)
+
     specs = [
         ("Max cal |bias| %", "sis_cal_bias", 20.0), ("Minimum Fit R²", "sis_r2", 0.99),
         ("Max QC mean |bias| %", "sis_qc_mean_bias", 20.0),
@@ -164,7 +179,7 @@ def _build_tab(w):
         else:
             sp.setRange(0.0, 100.0); sp.setDecimals(2)
         sp.setValue(val); setattr(w, attr, sp); g.addWidget(sp, r, c + 1)
-    run = QPushButton("Run Surrogate IS Analysis"); run.clicked.connect(lambda: _run(w)); g.addWidget(run, 2, 4, 2, 2)
+    run = QPushButton("Run Surrogate IS Analysis"); run.clicked.connect(lambda: _run(w)); g.addWidget(run, 3, 4, 2, 2)
     root.addWidget(box)
 
     w.sis_note = QLabel(""); w.sis_note.setWordWrap(True); root.addWidget(w.sis_note)
@@ -474,6 +489,7 @@ def _save_surrogate_project(w):
                 "max_qc_abs_bias": float(w.sis_qc_max_bias.value()),
                 "max_qc_cv": float(w.sis_qc_cv.value()),
                 "qc_reference_basis": w.sis_qc_reference.currentText(),
+                "matched_sil_range_policy": w.sis_sil_range_policy.currentText(),
                 "origin_mode": w.sis_origin.currentText(),
             },
             "analyte_fit_settings": _analyte_fit_settings_from_ui(w),
@@ -601,6 +617,10 @@ def _open_surrogate_project(w):
         _restore_combo_text(
             w.sis_qc_reference,
             criteria.get("qc_reference_basis", "Nominal concentration"),
+        )
+        _restore_combo_text(
+            w.sis_sil_range_policy,
+            criteria.get("matched_sil_range_policy", "Allow extrapolation"),
         )
         _restore_combo_text(w.sis_origin, criteria.get("origin_mode", ORIGIN_EXCLUDE))
         w.sis_analyte_fit_settings = {
@@ -783,6 +803,7 @@ def _criteria(w):
         max_calibrator_bias=w.sis_cal_bias.value(), min_r2=w.sis_r2.value(),
         max_qc_mean_abs_bias=w.sis_qc_mean_bias.value(), max_qc_abs_bias=w.sis_qc_max_bias.value(),
         max_qc_cv=w.sis_qc_cv.value(), qc_reference_basis=w.sis_qc_reference.currentText(),
+        matched_sil_range_policy=w.sis_sil_range_policy.currentText(),
         origin_mode=w.sis_origin.currentText(),
     )
 
