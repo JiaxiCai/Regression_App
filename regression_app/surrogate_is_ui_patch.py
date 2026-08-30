@@ -69,9 +69,9 @@ def _build_tab(w):
         "Systematically benchmark every analyte × internal-standard pairing. "
         "The starting calibrator set can come from Stage 1 or from the calibrators retained by "
         "TargetLynx Primary Flags. Stage 2 then fits each "
-        "analyte/IS response ratio iteratively, removing the worst-bias concentration level until "
-        "the configured calibration criteria pass or the minimum calibrator count is reached. "
-        "QC bias and precision are evaluated after the Stage 2 pair fit."
+        "analyte/IS response ratio using either exhaustive contiguous-window search or the legacy "
+        "greedy removal algorithm. Exhaustive search compares passing contiguous calibration windows "
+        "using QC bias/precision and working-range width so strong surrogate curves are not missed."
     )
     intro.setWordWrap(True); root.addWidget(intro)
 
@@ -108,6 +108,16 @@ def _build_tab(w):
         "TargetLynx Primary Flags: skip Stage 1 and use the analyte calibrators not marked X or lowercase l as the common starting set."
     )
     source_row.addWidget(w.sis_calibrator_source)
+    source_row.addWidget(QLabel("Pair search"))
+    w.sis_pair_search = QComboBox()
+    w.sis_pair_search.addItems(["Exhaustive contiguous", "Greedy"])
+    w.sis_pair_search.setCurrentText("Exhaustive contiguous")
+    w.sis_pair_search.setToolTip(
+        "Exhaustive contiguous evaluates every contiguous calibration window within the allowed "
+        "starting levels and prefers the widest window passing both calibration and QC criteria. "
+        "Greedy reproduces the legacy Stage-2 behavior by repeatedly removing the current worst-bias level."
+    )
+    source_row.addWidget(w.sis_pair_search)
     source_row.addStretch()
     root.addLayout(source_row)
 
@@ -439,6 +449,7 @@ def _save_surrogate_project(w):
             },
             "analyte_fit_settings": _analyte_fit_settings_from_ui(w),
             "calibrator_source": w.sis_calibrator_source.currentText(),
+            "pair_search_mode": w.sis_pair_search.currentText(),
             "manual_exclusions": exclusions,
             "ranking": {
                 "filter_column": filter_col,
@@ -566,6 +577,7 @@ def _open_surrogate_project(w):
         }
         _populate_analyte_fit_settings(w)
         _restore_combo_text(w.sis_calibrator_source, state.get("calibrator_source", "Stage 1"))
+        _restore_combo_text(w.sis_pair_search, state.get("pair_search_mode", "Exhaustive contiguous"))
 
         heat = state.get("heatmap", {})
         _restore_combo_text(w.sis_heat_metric, heat.get("metric", "Fit R2"))
@@ -1159,7 +1171,8 @@ def _run(w, suppress_large_warning=False):
             w.sis_data, _criteria(w), component_mapping=mapping,
             qc_sample_mapping=qc_mapping, user_amr=w.sis_user_amr,
             calibrator_source_mode=w.sis_calibrator_source.currentText(),
-            analyte_fit_settings=_analyte_fit_settings_from_ui(w)
+            analyte_fit_settings=_analyte_fit_settings_from_ui(w),
+            pair_search_mode=w.sis_pair_search.currentText()
         ); rank = w.sis_result["ranking"]
         w.sis_rank_filter_column.blockSignals(True)
         w.sis_rank_filter_column.clear()
