@@ -1,4 +1,4 @@
-# Regression App v0.5.24
+# Regression App v0.5.25
 
 A cross-platform PySide6 desktop workbench for analytical and clinical laboratory data analysis, with emphasis on calibration, method validation, LC-MS/MS workflows, and transparent statistical reporting.
 
@@ -77,6 +77,7 @@ Systematic analyte × internal-standard benchmarking for LC-MS/MS workflows.
 - TargetLynx Primary Flags mode skips Stage 1 and uses analyte calibrators not marked X or lowercase l as the common candidate set
 - Exhaustive contiguous pair search evaluates all contiguous candidate windows and uses calibration + QC performance to select the best working range; legacy greedy search remains available
 - Surrogate heatmaps can be ordered by retention time (default) or alphabetically; analyte and IS axes are sorted independently by median calibrator RT
+- Heatmaps can optionally grey out failed analyte–IS pairs while retaining metric values and annotations
 - Stage 2 iteratively fits each analyte/IS pair within the Stage-1 levels; if calibration criteria fail, the worst absolute-bias concentration level is removed and the pair is refit until it passes or reaches the minimum calibrator count
 - Optional user-defined AMR import from CSV/Excel using analyte/component, LLOQ, and ULOQ columns
 - User AMRs can be partial; unmatched analytes fall back to automatic Stage 1 selection
