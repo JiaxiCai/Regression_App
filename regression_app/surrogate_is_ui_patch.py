@@ -113,7 +113,7 @@ def _build_tab(w):
 
     box = QGroupBox("Acceptance criteria"); g = QGridLayout(box)
     g.addWidget(QLabel("Model"), 0, 0)
-    w.sis_model = QComboBox(); w.sis_model.addItems(["Linear", "Linear 1/x", "Linear 1/x²"])
+    w.sis_model = QComboBox(); w.sis_model.addItems(["Linear", "Linear 1/x", "Linear 1/x²", "Quadratic", "Quadratic 1/x", "Quadratic 1/x²", "Padé [1/1]", "Padé [2/1]"])
     w.sis_model.setCurrentText("Linear 1/x"); g.addWidget(w.sis_model, 0, 1)
     g.addWidget(QLabel("Minimum calibrators"), 0, 2)
     w.sis_min_cal = QSpinBox(); w.sis_min_cal.setRange(3, 30); w.sis_min_cal.setValue(5)
@@ -653,7 +653,7 @@ def _populate_analyte_fit_settings(w):
 
         saved = w.sis_analyte_fit_settings.get(str(analyte), {})
         model = QComboBox()
-        model.addItems(["Global Default", "Linear", "Linear 1/x", "Linear 1/x²"])
+        model.addItems(["Global Default", "Linear", "Linear 1/x", "Linear 1/x²", "Quadratic", "Quadratic 1/x", "Quadratic 1/x²", "Padé [1/1]", "Padé [2/1]"])
         model.setCurrentText(str(saved.get("model_display", "Global Default")))
         table.setCellWidget(r, 1, model)
 
