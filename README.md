@@ -1,4 +1,4 @@
-# Regression App v0.5.18
+# Regression App v0.5.19
 
 A cross-platform PySide6 desktop workbench for analytical and clinical laboratory data analysis, with emphasis on calibration, method validation, LC-MS/MS workflows, and transparent statistical reporting.
 
@@ -127,6 +127,13 @@ Systematic analyte × internal-standard benchmarking for LC-MS/MS workflows.
 - Multi-select TargetLynx metadata and measurement/result columns
 - Preserves numeric data types while retaining values such as `<LLOQ` and `No Peak` as text
 - Wide, long/tidy, and one-worksheet-per-compound Excel outputs
+
+### Project sessions
+- Save and reopen portable `.regproj` analysis projects
+- Project files embed normalized source data and versioned analysis settings rather than unsafe Python pickle objects
+- Surrogate IS projects currently restore component/QC mappings, user AMRs, acceptance criteria, calibrator source, manual pair edits, ranking layout/filter state, selected pair, and heatmap settings
+- Completed analyses are reconstructed from saved state when reopened so calculations remain compatible with the current application code
+- The project format is designed for additional Regression App modules to adopt progressively
 
 ## Statistical transparency
 
