@@ -1,4 +1,4 @@
-# Regression App v0.5.17
+# Regression App v0.5.18
 
 A cross-platform PySide6 desktop workbench for analytical and clinical laboratory data analysis, with emphasis on calibration, method validation, LC-MS/MS workflows, and transparent statistical reporting.
 
@@ -106,7 +106,9 @@ Systematic analyte × internal-standard benchmarking for LC-MS/MS workflows.
   - choose one of its available values
 - Ranking columns can be reordered by dragging the header and shown/hidden from the Columns menu
 - Example: **Pair Type → Surrogate** displays all analyte–surrogate combinations
-- Heatmaps for QC mean bias, QC maximum bias, QC CV, calibrator bias, and Fit R²
+- Heatmaps can display R², calibration bias, QC bias, QC CV, AMR, retained-level, and Stage-2 iteration metrics
+- Optional cell-value annotations
+- Direct PNG and SVG heatmap export
 - Full ranking remains available for export while the UI renders only the filtered subset for improved stability
 - Pair Detail plot and calibrator table are displayed side-by-side
 
