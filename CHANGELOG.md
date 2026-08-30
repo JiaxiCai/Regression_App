@@ -2,6 +2,16 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.13] - 2026-08-29
+
+### Generic Pair Ranking filters
+- Replaced the analyte-only Pair Ranking selector with two dropdowns: Filter Column and Value.
+- Filter Column can use any Pair Ranking field, including Analyte, Internal Standard, Pair Type, Pass, QC Reference, AMR Source, and RT metrics.
+- Value is populated dynamically from the unique values available in the selected column.
+- Added an All/Clear state to restore the complete ranking view.
+- Supports pair-level views such as Pair Type = Surrogate to display all analyte–surrogate combinations across the dataset.
+- Retains the full ranking in memory while only rendering the filtered subset in Qt for scalability.
+
 ## [0.5.12] - 2026-08-29
 
 ### Pair-level SIL-IS versus surrogate classification
