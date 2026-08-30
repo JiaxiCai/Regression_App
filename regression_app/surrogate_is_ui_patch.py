@@ -17,8 +17,8 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 from .surrogate_is import (
     SurrogateCriteria, load_surrogate_data, load_user_amr, analyze_surrogate_is,
     component_mapping_table, qc_sample_mapping_table, pair_metric_matrix,
-    compute_pair_detail, refit_pair_with_exclusions, sync_pair_amr_to_surrogates,
-    export_surrogate_workbook,
+    compute_pair_detail, refit_pair_with_exclusions, refresh_matched_sil_dependents,
+    sync_pair_amr_to_surrogates, export_surrogate_workbook,
 )
 from .ui_helpers import SortableTableItem, configure_sortable_table, make_table_filter_bar
 from .project_io import save_project, load_project
@@ -1341,6 +1341,42 @@ def _calibrator_use_changed(w, item):
         detail = refit_pair_with_exclusions(
             w.sis_result, pair[0], pair[1], excluded
         )
+
+        # If the edited pair is this analyte's matched SIL-IS and matched-SIL
+        # reference mode is active, every surrogate QC bias depends on this
+        # reference curve. Refresh those dependent pair summaries immediately
+        # while preserving each surrogate's own calibrator selection.
+        criteria = w.sis_result.get("criteria")
+        is_meta = w.sis_result.get("is_metadata")
+        is_matched_sil = False
+        if (
+            criteria is not None
+            and getattr(criteria, "qc_reference_basis", "") == "Matched SIL-IS calculated concentration"
+            and is_meta is not None
+            and len(is_meta)
+        ):
+            sil = is_meta[
+                is_meta["IS Class"].astype(str).eq("SIL-IS")
+                & is_meta["Paired Analyte"].astype(str).eq(str(pair[0]))
+                & is_meta["Component"].astype(str).eq(str(pair[1]))
+            ]
+            is_matched_sil = len(sil) > 0
+
+        if is_matched_sil:
+            refresh = refresh_matched_sil_dependents(w.sis_result, pair[0])
+            detail = compute_pair_detail(w.sis_result, pair[0], pair[1])
+            _refresh_ranking_view(w, preferred_pair=pair)
+            _draw_heatmap(w)
+            failed = refresh.get("failed", [])
+            suffix = (
+                f"; {len(failed)} dependent pair(s) could not be refreshed"
+                if failed else ""
+            )
+            w.sis_note.setText(
+                f"Updated matched SIL-IS reference for {pair[0]}; recalculated "
+                f"{refresh.get('updated', 0)} reference-dependent pair(s){suffix}."
+            )
+
         _refresh_selected_pair(w, pair, detail, refresh_ranking=True)
     except Exception as exc:
         QMessageBox.critical(w, "Pair refit failed", str(exc))
