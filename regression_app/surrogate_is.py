@@ -176,7 +176,8 @@ def qc_sample_mapping_table(normalized):
     for (sample_key, sample_name), g in qc.groupby(["Sample Key", "Sample Name"], sort=False):
         name_text = str(sample_name)
         # Conservative automatic exclusion for explicitly labeled IS-stress samples.
-        auto_include = not name_text.casefold().replace("_", " ").replace("-", " ").find("low is") >= 0
+        normalized_name = name_text.casefold().replace("_", " ").replace("-", " ")
+        auto_include = "low is" not in normalized_name
         rows.append({
             "Sample Key": str(sample_key),
             "Sample Name": name_text,
