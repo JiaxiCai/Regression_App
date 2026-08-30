@@ -379,8 +379,12 @@ def _fit_candidate(x, y, criteria):
     except Exception:
         return None
     bias = np.asarray(fit.bias_pct, float)
-    max_bias = float(np.nanmax(np.abs(bias))) if np.isfinite(bias).any() else np.nan
-    mean_abs = float(np.nanmean(np.abs(bias))) if np.isfinite(bias).any() else np.nan
+    finite_bias = bias[np.isfinite(bias)]
+    max_bias = float(np.nanmax(np.abs(finite_bias))) if finite_bias.size else np.nan
+    min_abs = float(np.nanmin(np.abs(finite_bias))) if finite_bias.size else np.nan
+    mean_abs = float(np.nanmean(np.abs(finite_bias))) if finite_bias.size else np.nan
+    min_signed = float(np.nanmin(finite_bias)) if finite_bias.size else np.nan
+    max_signed = float(np.nanmax(finite_bias)) if finite_bias.size else np.nan
     r2 = float(fit.stats.get("fit_r2", np.nan))
     wr2 = float(fit.stats.get("weighted_r2", np.nan))
     passed = (
@@ -390,7 +394,9 @@ def _fit_candidate(x, y, criteria):
     )
     return {
         "fit": fit, "n_cal": int(len(x)), "max_cal_abs_bias_pct": max_bias,
-        "mean_cal_abs_bias_pct": mean_abs, "fit_r2": r2, "weighted_r2": wr2,
+        "min_cal_abs_bias_pct": min_abs, "mean_cal_abs_bias_pct": mean_abs,
+        "min_cal_bias_pct": min_signed, "max_cal_bias_pct": max_signed,
+        "fit_r2": r2, "weighted_r2": wr2,
         "pass_cal": bool(passed), "lloq": float(np.min(x)), "uloq": float(np.max(x)),
     }
 
@@ -438,11 +444,17 @@ def _qc_metrics(calc, reference, group_levels=None):
             mean = float(np.mean(vals))
             if np.isfinite(mean) and mean != 0:
                 cvs.append(float(np.std(vals, ddof=1) / mean * 100.0))
+    finite_bias = bias[np.isfinite(bias)]
     return {
         "qc_n": int(len(calc)),
         "qc_levels": int(len(unique_levels)),
-        "qc_mean_abs_bias_pct": float(np.mean(np.abs(bias))),
-        "qc_max_abs_bias_pct": float(np.max(np.abs(bias))),
+        "qc_mean_abs_bias_pct": float(np.mean(np.abs(finite_bias))) if finite_bias.size else np.nan,
+        "qc_min_abs_bias_pct": float(np.min(np.abs(finite_bias))) if finite_bias.size else np.nan,
+        "qc_max_abs_bias_pct": float(np.max(np.abs(finite_bias))) if finite_bias.size else np.nan,
+        "qc_min_bias_pct": float(np.min(finite_bias)) if finite_bias.size else np.nan,
+        "qc_max_bias_pct": float(np.max(finite_bias)) if finite_bias.size else np.nan,
+        "qc_mean_cv_pct": float(np.nanmean(cvs)) if cvs else np.nan,
+        "qc_min_cv_pct": float(np.nanmin(cvs)) if cvs else np.nan,
         "qc_max_cv_pct": float(np.nanmax(cvs)) if cvs else np.nan,
     }
 
@@ -467,7 +479,12 @@ def _qc_summary(calc, reference, group_levels=None):
     return by, {
         "qc_n": int(len(d)), "qc_levels": int(by["nominal"].nunique()),
         "qc_mean_abs_bias_pct": float(np.nanmean(np.abs(d["bias_pct"]))),
+        "qc_min_abs_bias_pct": float(np.nanmin(np.abs(d["bias_pct"]))),
         "qc_max_abs_bias_pct": float(np.nanmax(np.abs(d["bias_pct"]))),
+        "qc_min_bias_pct": float(np.nanmin(d["bias_pct"])),
+        "qc_max_bias_pct": float(np.nanmax(d["bias_pct"])),
+        "qc_mean_cv_pct": float(np.nanmean(by["cv_pct"])) if np.isfinite(by["cv_pct"]).any() else np.nan,
+        "qc_min_cv_pct": float(np.nanmin(by["cv_pct"])) if np.isfinite(by["cv_pct"]).any() else np.nan,
         "qc_max_cv_pct": float(np.nanmax(by["cv_pct"])) if np.isfinite(by["cv_pct"]).any() else np.nan,
     }
 
@@ -743,10 +760,21 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                 "Stage 2 Removed": int(len(iterative["removed_levels"])),
                 "Pass": bool(m["pass_cal"] and qc_pass), "Calibration Pass": bool(m["pass_cal"]), "QC Pass": qc_pass,
                 "n Cal": m["n_cal"], "LLOQ": m["lloq"], "ULOQ": m["uloq"], "Span Ratio": m["uloq"] / m["lloq"],
-                "Max Cal |Bias| %": m["max_cal_abs_bias_pct"], "Mean Cal |Bias| %": m["mean_cal_abs_bias_pct"],
+                "Min Cal Bias %": m.get("min_cal_bias_pct", np.nan),
+                "Max Cal Bias %": m.get("max_cal_bias_pct", np.nan),
+                "Min Cal |Bias| %": m.get("min_cal_abs_bias_pct", np.nan),
+                "Max Cal |Bias| %": m["max_cal_abs_bias_pct"],
+                "Mean Cal |Bias| %": m["mean_cal_abs_bias_pct"],
                 "Fit R2": m["fit_r2"], "Weighted R2": m["weighted_r2"], "QC n": qs.get("qc_n", 0),
-                "QC Levels": qs.get("qc_levels", 0), "QC Mean |Bias| %": qs.get("qc_mean_abs_bias_pct", np.nan),
-                "QC Max |Bias| %": qs.get("qc_max_abs_bias_pct", np.nan), "QC Max CV %": qs.get("qc_max_cv_pct", np.nan),
+                "QC Levels": qs.get("qc_levels", 0),
+                "QC Min Bias %": qs.get("qc_min_bias_pct", np.nan),
+                "QC Max Bias %": qs.get("qc_max_bias_pct", np.nan),
+                "QC Min |Bias| %": qs.get("qc_min_abs_bias_pct", np.nan),
+                "QC Mean |Bias| %": qs.get("qc_mean_abs_bias_pct", np.nan),
+                "QC Max |Bias| %": qs.get("qc_max_abs_bias_pct", np.nan),
+                "QC Min CV %": qs.get("qc_min_cv_pct", np.nan),
+                "QC Mean CV %": qs.get("qc_mean_cv_pct", np.nan),
+                "QC Max CV %": qs.get("qc_max_cv_pct", np.nan),
             }
             rankings.append(row)
 
@@ -1037,14 +1065,22 @@ def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
             "LLOQ": float(np.min(active)) if len(active) else np.nan,
             "ULOQ": float(np.max(active)) if len(active) else np.nan,
             "Span Ratio": float(np.max(active) / np.min(active)) if len(active) else np.nan,
+            "Min Cal Bias %": float(cal.loc[cal["Use"], "Bias %"].min()) if cal["Use"].any() else np.nan,
+            "Max Cal Bias %": float(cal.loc[cal["Use"], "Bias %"].max()) if cal["Use"].any() else np.nan,
+            "Min Cal |Bias| %": float(cal.loc[cal["Use"], "|Bias| %"].min()) if cal["Use"].any() else np.nan,
             "Max Cal |Bias| %": max_bias,
             "Mean Cal |Bias| %": mean_bias,
             "Fit R2": r2,
             "Weighted R2": wr2,
             "QC n": qs.get("qc_n", 0),
             "QC Levels": qs.get("qc_levels", 0),
+            "QC Min Bias %": qs.get("qc_min_bias_pct", np.nan),
+            "QC Max Bias %": qs.get("qc_max_bias_pct", np.nan),
+            "QC Min |Bias| %": qs.get("qc_min_abs_bias_pct", np.nan),
             "QC Mean |Bias| %": qs.get("qc_mean_abs_bias_pct", np.nan),
             "QC Max |Bias| %": qs.get("qc_max_abs_bias_pct", np.nan),
+            "QC Min CV %": qs.get("qc_min_cv_pct", np.nan),
+            "QC Mean CV %": qs.get("qc_mean_cv_pct", np.nan),
             "QC Max CV %": qs.get("qc_max_cv_pct", np.nan),
         }
         for col, value in updates.items():
