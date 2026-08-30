@@ -616,8 +616,10 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                 and qs["qc_max_abs_bias_pct"] <= criteria.max_qc_abs_bias
                 and (not np.isfinite(qs.get("qc_max_cv_pct", np.nan)) or qs["qc_max_cv_pct"] <= criteria.max_qc_cv)
             )
-            is_class = str(is_meta.loc[is_name, "IS Class"]) if len(is_meta) and is_name in is_meta.index else "Surrogate"
+            is_class = str(is_meta.loc[is_name, "IS Class"]) if len(is_meta) and is_name in is_meta.index else ""
             paired_analyte = str(is_meta.loc[is_name, "Paired Analyte"]) if len(is_meta) and is_name in is_meta.index else ""
+            own_sil = bool(is_class == "SIL-IS" and paired_analyte == str(analyte))
+            pair_type = "Own SIL-IS" if own_sil else "Surrogate"
             rt_delta = np.nan
             if str(analyte) in cal_rt_np and str(is_name) in cal_rt_np:
                 art = cal_rt_np[str(analyte)]; irt = cal_rt_np[str(is_name)]
@@ -626,8 +628,10 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                     rt_delta = float(np.nanmedian(np.abs(art[rv] - irt[rv])))
             row = {
                 "Analyte": analyte, "Group": groups.get(analyte, analyte), "Internal Standard": is_name,
-                "IS Class": is_class, "Paired Analyte": paired_analyte,
-                "Matched SIL-IS": bool(is_class == "SIL-IS" and paired_analyte == str(analyte)),
+                "Pair Type": pair_type,
+                "IS Identity": is_class or "Unclassified",
+                "Paired Analyte": paired_analyte,
+                "Matched SIL-IS": own_sil,
                 "Median |ΔRT|": rt_delta,
                 "QC Reference": reference_basis,
                 "AMR Source": stage1_sources.get(str(analyte), "Automatic"),
