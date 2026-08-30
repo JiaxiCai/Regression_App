@@ -182,10 +182,20 @@ def _build_tab(w):
 
     rank_page = QWidget(); rl = QVBoxLayout(rank_page)
     rank_controls = QHBoxLayout()
-    rank_controls.addWidget(QLabel("Show analyte"))
-    w.sis_rank_analyte = QComboBox()
-    w.sis_rank_analyte.currentTextChanged.connect(lambda _: _refresh_ranking_view(w))
-    rank_controls.addWidget(w.sis_rank_analyte)
+    rank_controls.addWidget(QLabel("Filter column"))
+    w.sis_rank_filter_column = QComboBox()
+    w.sis_rank_filter_column.currentTextChanged.connect(lambda _: _update_ranking_filter_values(w))
+    rank_controls.addWidget(w.sis_rank_filter_column)
+
+    rank_controls.addWidget(QLabel("Value"))
+    w.sis_rank_filter_value = QComboBox()
+    w.sis_rank_filter_value.currentTextChanged.connect(lambda _: _refresh_ranking_view(w))
+    rank_controls.addWidget(w.sis_rank_filter_value)
+
+    clear_rank_filter = QPushButton("Clear")
+    clear_rank_filter.clicked.connect(lambda: _clear_ranking_filter(w))
+    rank_controls.addWidget(clear_rank_filter)
+
     rank_controls.addStretch()
     w.sis_rank_count = QLabel("")
     rank_controls.addWidget(w.sis_rank_count)
@@ -520,6 +530,37 @@ def _set_all_qc_included(w, included):
     _update_qc_mapping_summary(w)
 
 
+def _ranking_display_value(value):
+    if isinstance(value, (bool, np.bool_)):
+        return "PASS" if bool(value) else "FAIL"
+    return _fmt(value)
+
+
+def _update_ranking_filter_values(w):
+    if not w.sis_result:
+        return
+    rank = w.sis_result.get("ranking")
+    if rank is None or rank.empty:
+        return
+    col = w.sis_rank_filter_column.currentText()
+    w.sis_rank_filter_value.blockSignals(True)
+    w.sis_rank_filter_value.clear()
+    w.sis_rank_filter_value.addItem("All")
+    if col and col in rank.columns:
+        values = rank[col].drop_duplicates().tolist()
+        values = sorted(values, key=lambda v: _ranking_display_value(v).casefold())
+        for value in values:
+            w.sis_rank_filter_value.addItem(_ranking_display_value(value), value)
+    w.sis_rank_filter_value.blockSignals(False)
+    w.sis_rank_filter_value.setCurrentIndex(0)
+    _refresh_ranking_view(w)
+
+
+def _clear_ranking_filter(w):
+    if hasattr(w, "sis_rank_filter_value"):
+        w.sis_rank_filter_value.setCurrentIndex(0)
+
+
 def _refresh_ranking_view(w, preferred_pair=None):
     if not w.sis_result:
         return
@@ -527,10 +568,20 @@ def _refresh_ranking_view(w, preferred_pair=None):
     if rank is None:
         return
 
-    selected = w.sis_rank_analyte.currentText() if hasattr(w, "sis_rank_analyte") else ""
     view = rank
-    if selected:
-        view = rank[rank["Analyte"].astype(str).eq(selected)]
+    col = w.sis_rank_filter_column.currentText() if hasattr(w, "sis_rank_filter_column") else ""
+    value_index = w.sis_rank_filter_value.currentIndex() if hasattr(w, "sis_rank_filter_value") else 0
+    if col and col in rank.columns and value_index > 0:
+        raw = w.sis_rank_filter_value.currentData()
+        series = rank[col]
+        if isinstance(raw, (bool, np.bool_)):
+            mask = series.astype(bool).eq(bool(raw))
+        elif isinstance(raw, (int, float, np.integer, np.floating)) and not isinstance(raw, (bool, np.bool_)):
+            vals = pd.to_numeric(series, errors="coerce")
+            mask = np.isclose(vals.to_numpy(float), float(raw), rtol=1e-12, atol=1e-12, equal_nan=False)
+        else:
+            mask = series.astype(str).eq(str(raw))
+        view = rank.loc[mask]
 
     _fill_table(w.sis_ranking, view.reset_index(drop=True))
     if hasattr(w, "sis_rank_count"):
@@ -553,7 +604,6 @@ def _refresh_ranking_view(w, preferred_pair=None):
                 if ai and ii and ai.text() == target[0] and ii.text() == target[1]:
                     w.sis_ranking.selectRow(r)
                     break
-
 
 def _run(w):
     if w.sis_data is None:
@@ -587,12 +637,17 @@ def _run(w):
             w.sis_data, _criteria(w), component_mapping=mapping,
             qc_sample_mapping=qc_mapping, user_amr=w.sis_user_amr
         ); rank = w.sis_result["ranking"]
-        w.sis_rank_analyte.blockSignals(True)
-        w.sis_rank_analyte.clear()
-        analytes = sorted(rank["Analyte"].astype(str).unique().tolist()) if not rank.empty else []
-        w.sis_rank_analyte.addItems(analytes)
-        w.sis_rank_analyte.blockSignals(False)
-        _refresh_ranking_view(w)
+        w.sis_rank_filter_column.blockSignals(True)
+        w.sis_rank_filter_column.clear()
+        if not rank.empty:
+            w.sis_rank_filter_column.addItems([str(c) for c in rank.columns])
+        w.sis_rank_filter_column.blockSignals(False)
+        if not rank.empty:
+            preferred = "Analyte" if "Analyte" in rank.columns else str(rank.columns[0])
+            w.sis_rank_filter_column.setCurrentText(preferred)
+            _update_ranking_filter_values(w)
+        else:
+            _refresh_ranking_view(w)
         _fill_table(w.sis_stage1, w.sis_result["stage1"])
         passed = int(rank["Pass"].sum()) if not rank.empty else 0
         w.sis_note.setText(f"Evaluated {len(rank)} analyte–IS pairs; {passed} met all current calibration and QC criteria.")
