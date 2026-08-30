@@ -2,6 +2,12 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.29] - 2026-08-30
+
+### Heatmap import fix
+- Fixed `name 'pd' is not defined` when drawing Surrogate IS heatmaps.
+- Added the missing pandas import required by the pair-status masking code introduced in v0.5.28.
+
 ## [0.5.28] - 2026-08-30
 
 ### Robust heatmap masking
