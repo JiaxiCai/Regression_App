@@ -61,8 +61,10 @@ def _build_tab(w):
     page = QWidget(); root = QVBoxLayout(page)
     intro = QLabel(
         "Systematically benchmark every analyte × internal-standard pairing. "
-        "Stage 1 establishes an analyte-only contiguous calibration range; Stage 2 fits "
-        "analyte/IS response ratios on those levels and evaluates independent QC bias and precision."
+        "Stage 1 establishes an analyte-only candidate calibration range. Stage 2 then fits each "
+        "analyte/IS response ratio iteratively, removing the worst-bias concentration level until "
+        "the configured calibration criteria pass or the minimum calibrator count is reached. "
+        "QC bias and precision are evaluated after the Stage 2 pair fit."
     )
     intro.setWordWrap(True); root.addWidget(intro)
 
@@ -227,9 +229,9 @@ def _build_tab(w):
 
     table_panel = QWidget(); tpl = QVBoxLayout(table_panel)
     cal_label = QLabel(
-        "Calibrators — Stage 1 levels start checked. All other usable calibrators are shown unchecked; "
-        "check or uncheck any level to expand or shrink this pair's AMR and refit. "
-        "Manual edits are pair-specific and are labeled as Manual edited."
+        "Calibrators — automatic Stage 2 levels start checked. Levels removed by iterative Stage 2, "
+        "plus usable levels outside Stage 1, remain visible unchecked. Check or uncheck any level to "
+        "manually expand or shrink this pair's AMR and refit. Manual edits are pair-specific."
     )
     cal_label.setWordWrap(True); tpl.addWidget(cal_label)
     sync_amr = QPushButton("Sync AMR to Other Surrogates")
