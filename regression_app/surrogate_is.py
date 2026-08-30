@@ -504,6 +504,19 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
     cal_rt = _rt_pivot(data, cal_rows); qc_rt = _rt_pivot(data, qc_rows)
     cal_nom = _analyte_nominals(data, cal_rows); qc_nom = _analyte_nominals(data, qc_rows)
     qc_meta = _sample_metadata(data, qc_rows)
+
+    # Align once so all cached NumPy columns refer to identical sample rows.
+    cal_index = cal_area.index.intersection(cal_nom.index)
+    qc_index = qc_area.index.intersection(qc_nom.index)
+    cal_area = cal_area.reindex(cal_index)
+    cal_nom = cal_nom.reindex(cal_index)
+    if not cal_rt.empty:
+        cal_rt = cal_rt.reindex(cal_index)
+    qc_area = qc_area.reindex(qc_index)
+    qc_nom = qc_nom.reindex(qc_index)
+    if not qc_rt.empty:
+        qc_rt = qc_rt.reindex(qc_index)
+    qc_meta = qc_meta.reindex(qc_index)
     analytes = [c for c in cal_nom.columns if c in cal_area.columns]
     is_names = sorted(data.loc[data["Component Role"] == "IS", "Component"].astype(str).unique())
     if not analytes: raise ValueError("No analyte components with calibration concentrations were detected.")
