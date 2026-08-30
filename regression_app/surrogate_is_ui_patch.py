@@ -227,7 +227,8 @@ def _build_tab(w):
 
     table_panel = QWidget(); tpl = QVBoxLayout(table_panel)
     cal_label = QLabel(
-        "Calibrators — uncheck Use to exclude that concentration for this pair and refit. "
+        "Calibrators — Stage 1 levels start checked. All other usable calibrators are shown unchecked; "
+        "check or uncheck any level to expand or shrink this pair's AMR and refit. "
         "Manual edits are pair-specific and are labeled as Manual edited."
     )
     cal_label.setWordWrap(True); tpl.addWidget(cal_label)
@@ -762,10 +763,11 @@ def _sync_amr_to_surrogates(w):
     if pair is None:
         return
 
-    exclusions = list(
-        w.sis_result.get("manual_exclusions", {}).get((str(pair[0]), str(pair[1])), [])
+    table = w.sis_cal_detail
+    active_n = sum(
+        1 for r in range(table.rowCount())
+        if table.item(r, 0) is not None and table.item(r, 0).checkState() == Qt.Checked
     )
-    active_n = len(w.sis_result.get("stage1_levels", {}).get(str(pair[0]), [])) - len(exclusions)
 
     answer = QMessageBox.question(
         w,
