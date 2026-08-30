@@ -2,6 +2,17 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.20] - 2026-08-30
+
+### Per-analyte regression model and origin handling
+- Added a global Origin Handling selector to Surrogate IS Analysis with Exclude, Include, and Force options.
+- Exclude estimates a free intercept without adding an origin point; Include adds a synthetic (0,0) point; Force constrains the fitted curve through zero.
+- Added an Analyte Fit Settings tab where each analyte can independently inherit the global defaults or override its regression model and origin handling.
+- Per-analyte settings are applied consistently to automatic Stage 1 fitting, user-defined AMR fitting, TargetLynx Primary Flags candidate sets, iterative Stage 2 analyte/IS fitting, matched SIL-IS reference fitting, Pair Detail reconstruction, and manual pair refits.
+- Expanded Surrogate IS regression choices to the regression engine's current calibration models: Linear, Linear 1/x, Linear 1/x², Quadratic, Quadratic 1/x, Quadratic 1/x², Padé [1/1], and Padé [2/1].
+- Pair Ranking and Stage 1 output now report the regression model and origin handling used for each analyte.
+- Surrogate IS project files now preserve both global origin handling and analyte-specific model/origin overrides.
+
 ## [0.5.19] - 2026-08-30
 
 ### Project save/open framework
