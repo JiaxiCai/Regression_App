@@ -14,9 +14,9 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 
 from .surrogate_is import (
-    SurrogateCriteria, load_surrogate_data, analyze_surrogate_is,
+    SurrogateCriteria, load_surrogate_data, load_user_amr, analyze_surrogate_is,
     component_mapping_table, qc_sample_mapping_table, pair_metric_matrix,
-    compute_pair_detail, export_surrogate_workbook,
+    compute_pair_detail, refit_pair_with_exclusions, export_surrogate_workbook,
 )
 from .ui_helpers import SortableTableItem, configure_sortable_table, make_table_filter_bar
 
@@ -48,6 +48,9 @@ def install(MainWindow):
         self.sis_data = None; self.sis_result = None; self.sis_path = None
         self.sis_component_mapping = None
         self.sis_qc_mapping = None
+        self.sis_user_amr = None
+        self.sis_user_amr_path = None
+        self.sis_updating_cal_table = False
         _build_tab(self)
     MainWindow.__init__ = wrapped_init
 
@@ -66,6 +69,18 @@ def _build_tab(w):
     btn.clicked.connect(lambda: _load(w)); row.addWidget(btn)
     w.sis_file = QLabel("No file loaded"); w.sis_file.setWordWrap(True); row.addWidget(w.sis_file, 1)
     root.addLayout(row)
+
+    amr_row = QHBoxLayout()
+    amr_row.addWidget(QLabel("AMR source"))
+    w.sis_amr_status = QLabel("Automatic Stage 1")
+    amr_row.addWidget(w.sis_amr_status, 1)
+    load_amr = QPushButton("Load User AMR File")
+    load_amr.clicked.connect(lambda: _load_user_amr_file(w))
+    amr_row.addWidget(load_amr)
+    clear_amr = QPushButton("Clear User AMR")
+    clear_amr.clicked.connect(lambda: _clear_user_amr(w))
+    amr_row.addWidget(clear_amr)
+    root.addLayout(amr_row)
 
     box = QGroupBox("Acceptance criteria"); g = QGridLayout(box)
     g.addWidget(QLabel("Model"), 0, 0)
@@ -171,8 +186,18 @@ def _build_tab(w):
     detail_page = QWidget(); dl = QVBoxLayout(detail_page)
     w.sis_detail_label = QLabel("Select a pair from Pair Ranking."); w.sis_detail_label.setWordWrap(True)
     dl.addWidget(w.sis_detail_label)
-    w.sis_detail_fig = Figure(figsize=(10, 6), dpi=100); w.sis_detail_canvas = FigureCanvas(w.sis_detail_fig)
+    w.sis_detail_fig = Figure(figsize=(10, 5), dpi=100); w.sis_detail_canvas = FigureCanvas(w.sis_detail_fig)
     dl.addWidget(NavigationToolbar(w.sis_detail_canvas, detail_page)); dl.addWidget(w.sis_detail_canvas, 1)
+    cal_label = QLabel(
+        "Calibrators — uncheck Use to exclude that concentration for this pair and refit. "
+        "Manual edits are pair-specific and are labeled as Manual edited."
+    )
+    cal_label.setWordWrap(True); dl.addWidget(cal_label)
+    w.sis_cal_detail = QTableWidget()
+    configure_sortable_table(w.sis_cal_detail)
+    w.sis_cal_detail.setMaximumHeight(240)
+    w.sis_cal_detail.itemChanged.connect(lambda item: _calibrator_use_changed(w, item))
+    dl.addWidget(w.sis_cal_detail)
     outtabs.addTab(detail_page, "Pair Detail")
 
     qc_detail_page = QWidget(); qdl = QVBoxLayout(qc_detail_page)
@@ -194,6 +219,31 @@ def _build_tab(w):
     export.clicked.connect(lambda: _export(w)); er.addWidget(export); er.addStretch(); root.addLayout(er)
     insert = next((i for i in range(tabs.count()) if tabs.tabText(i) == "AMR Validation"), tabs.count())
     tabs.insertTab(insert, page, "Surrogate IS Analysis")
+
+
+def _load_user_amr_file(w):
+    path, _ = QFileDialog.getOpenFileName(
+        w, "Open User-defined AMR File", "",
+        "AMR files (*.csv *.xlsx *.xls);;All files (*)"
+    )
+    if not path:
+        return
+    try:
+        table = load_user_amr(path)
+        w.sis_user_amr = table
+        w.sis_user_amr_path = path
+        w.sis_amr_status.setText(
+            f"User-defined for {len(table)} analyte(s): {Path(path).name}; "
+            "automatic fallback for unmatched analytes"
+        )
+    except Exception as exc:
+        QMessageBox.critical(w, "AMR import failed", str(exc))
+
+
+def _clear_user_amr(w):
+    w.sis_user_amr = None
+    w.sis_user_amr_path = None
+    w.sis_amr_status.setText("Automatic Stage 1")
 
 
 def _criteria(w):
@@ -420,7 +470,7 @@ def _run(w):
                 return
         w.sis_result = analyze_surrogate_is(
             w.sis_data, _criteria(w), component_mapping=mapping,
-            qc_sample_mapping=qc_mapping
+            qc_sample_mapping=qc_mapping, user_amr=w.sis_user_amr
         ); rank = w.sis_result["ranking"]
         _fill_table(w.sis_ranking, rank); _fill_table(w.sis_stage1, w.sis_result["stage1"])
         passed = int(rank["Pass"].sum()) if not rank.empty else 0
@@ -457,6 +507,128 @@ def _fill_table(table, df):
     table.setSortingEnabled(sorting)
     if hasattr(table, "_apply_filter"):
         table._apply_filter()
+
+
+def _fill_calibrator_table(w, df):
+    table = w.sis_cal_detail
+    w.sis_updating_cal_table = True
+    sorting = table.isSortingEnabled()
+    table.setSortingEnabled(False)
+    cols = ["Use", "Nominal", "Ratio", "Back-calculated", "Bias %", "|Bias| %"]
+    table.clear(); table.setRowCount(len(df)); table.setColumnCount(len(cols))
+    table.setHorizontalHeaderLabels(cols)
+    for r, (_, rec) in enumerate(df.iterrows()):
+        use_item = QTableWidgetItem("")
+        use_item.setFlags(use_item.flags() | Qt.ItemIsUserCheckable)
+        use_item.setCheckState(Qt.Checked if bool(rec["Use"]) else Qt.Unchecked)
+        use_item.setData(Qt.UserRole, float(rec["Nominal"]))
+        table.setItem(r, 0, use_item)
+        for c, col in enumerate(cols[1:], start=1):
+            value = rec[col]
+            sort_value = float(value) if isinstance(value, (int, float, np.integer, np.floating)) and np.isfinite(value) else None
+            item = SortableTableItem(_fmt(value), sort_value=sort_value)
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+            table.setItem(r, c, item)
+    table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+    table.horizontalHeader().setStretchLastSection(True)
+    table.setSortingEnabled(sorting)
+    w.sis_updating_cal_table = False
+
+
+def _calibrator_use_changed(w, item):
+    if w.sis_updating_cal_table or item.column() != 0 or not w.sis_result:
+        return
+    pair = _selected_pair(w)
+    if pair is None:
+        return
+
+    table = w.sis_cal_detail
+    included = []
+    excluded = []
+    for r in range(table.rowCount()):
+        it = table.item(r, 0)
+        if it is None:
+            continue
+        nominal = float(it.data(Qt.UserRole))
+        if it.checkState() == Qt.Checked:
+            included.append(nominal)
+        else:
+            excluded.append(nominal)
+
+    if len(included) < w.sis_min_cal.value():
+        QMessageBox.information(
+            w, "Minimum calibrators",
+            f"At least {w.sis_min_cal.value()} calibrators must remain included."
+        )
+        w.sis_updating_cal_table = True
+        item.setCheckState(Qt.Checked)
+        w.sis_updating_cal_table = False
+        return
+
+    try:
+        detail = refit_pair_with_exclusions(
+            w.sis_result, pair[0], pair[1], excluded
+        )
+        _refresh_selected_pair(w, pair, detail, refresh_ranking=True)
+    except Exception as exc:
+        QMessageBox.critical(w, "Pair refit failed", str(exc))
+        _selection_changed(w)
+
+
+def _refresh_selected_pair(w, pair, detail, refresh_ranking=False):
+    if refresh_ranking:
+        _fill_table(w.sis_ranking, w.sis_result["ranking"])
+        headers = {
+            w.sis_ranking.horizontalHeaderItem(c).text(): c
+            for c in range(w.sis_ranking.columnCount())
+            if w.sis_ranking.horizontalHeaderItem(c) is not None
+        }
+        ac = headers.get("Analyte"); ic = headers.get("Internal Standard")
+        if ac is not None and ic is not None:
+            for r in range(w.sis_ranking.rowCount()):
+                ai = w.sis_ranking.item(r, ac); ii = w.sis_ranking.item(r, ic)
+                if ai and ii and ai.text() == pair[0] and ii.text() == pair[1]:
+                    w.sis_ranking.selectRow(r)
+                    break
+
+    s = detail["summary"]
+    _fill_calibrator_table(w, detail.get("calibrators", []))
+    qc_samples = detail.get("qc_samples")
+    if qc_samples is not None:
+        _fill_table(w.sis_qc_detail, qc_samples)
+        w.sis_qc_detail_label.setText(
+            f"{pair[0]} / {pair[1]} — {len(qc_samples)} included QC result(s); "
+            f"individual pass criterion: |bias| ≤ {w.sis_qc_max_bias.value():g}%."
+        )
+
+    source = s.get("AMR Source", w.sis_result.get("stage1_sources", {}).get(pair[0], "Automatic"))
+    w.sis_detail_label.setText(
+        f"{pair[0]} / {pair[1]} — {'PASS' if s.get('Pass', False) else 'FAIL'}; "
+        f"AMR {s.get('LLOQ', np.nan):g}–{s.get('ULOQ', np.nan):g} ({source}); "
+        f"max cal |bias| {s.get('Max Cal |Bias| %', np.nan):.2f}%; "
+        f"Fit R² {s.get('Fit R2', np.nan):.6f}; "
+        f"QC mean |bias| {_fmt(s.get('QC Mean |Bias| %', np.nan))}%; "
+        f"QC max CV {_fmt(s.get('QC Max CV %', np.nan))}%."
+    )
+    fig = w.sis_detail_fig; fig.clear(); ax = fig.add_subplot(111)
+    x = np.asarray(detail["x_cal"], float); y = np.asarray(detail["ratio_cal"], float); fit = detail["fit"]
+    ax.scatter(x, y, label="Included calibrators")
+    grid = np.linspace(np.min(x), np.max(x), 200)
+    ax.plot(grid, fit.predict(grid), label="Fit")
+    cal = detail.get("calibrators")
+    if cal is not None and len(cal):
+        excluded_rows = cal.loc[~cal["Use"].astype(bool)]
+        if len(excluded_rows):
+            ax.scatter(
+                excluded_rows["Nominal"].to_numpy(float),
+                excluded_rows["Ratio"].to_numpy(float),
+                marker="x", label="Excluded calibrators"
+            )
+    ax.set_xlabel("Nominal concentration")
+    ax.set_ylabel("Analyte / IS area ratio")
+    ax.set_title(f"{pair[0]} using {pair[1]}")
+    ax.legend()
+    fig.tight_layout(); w.sis_detail_canvas.draw_idle()
 
 
 def _draw_heatmap(w):
@@ -501,25 +673,7 @@ def _selection_changed(w):
     except Exception as exc:
         w.sis_detail_label.setText(f"Could not build pair detail: {exc}")
         return
-    s = detail["summary"]
-    qc_samples = detail.get("qc_samples")
-    if qc_samples is not None:
-        _fill_table(w.sis_qc_detail, qc_samples)
-        w.sis_qc_detail_label.setText(
-            f"{pair[0]} / {pair[1]} — {len(qc_samples)} included QC result(s); "
-            f"individual pass criterion: |bias| ≤ {w.sis_qc_max_bias.value():g}%."
-        )
-    w.sis_detail_label.setText(
-        f"{pair[0]} / {pair[1]} — {'PASS' if s['Pass'] else 'FAIL'}; "
-        f"range {s['LLOQ']:g}–{s['ULOQ']:g}; max cal |bias| {s['Max Cal |Bias| %']:.2f}%; "
-        f"Fit R² {s['Fit R2']:.6f}; QC mean |bias| {_fmt(s['QC Mean |Bias| %'])}%; QC max CV {_fmt(s['QC Max CV %'])}%."
-    )
-    fig = w.sis_detail_fig; fig.clear(); ax = fig.add_subplot(111)
-    x = np.asarray(detail["x_cal"], float); y = np.asarray(detail["ratio_cal"], float); fit = detail["fit"]
-    ax.scatter(x, y, label="Calibrators"); grid = np.linspace(np.min(x), np.max(x), 200)
-    ax.plot(grid, fit.predict(grid), label="Fit"); ax.set_xlabel("Nominal concentration")
-    ax.set_ylabel("Analyte / IS area ratio"); ax.set_title(f"{pair[0]} using {pair[1]}"); ax.legend()
-    fig.tight_layout(); w.sis_detail_canvas.draw_idle()
+    _refresh_selected_pair(w, pair, detail, refresh_ranking=False)
 
 
 def _export(w):
