@@ -2,6 +2,17 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.26] - 2026-08-30
+
+### Heatmap layout, failed-pair rendering, and matched-SIL reference consistency
+- Reworked the Surrogate IS Heatmap tab into a narrow control panel on the left and a larger plot panel on the right to reduce vertical compression.
+- Increased the heatmap figure's default working size for improved readability.
+- Replaced the prior RGBA failed-pair rendering path with explicit grey cell overlays, fixing cases where `Grey out failed pairs` did not visibly change the heatmap.
+- Failed cells retain their underlying metric values and optional annotations; the colorbar continues to describe the original metric scale.
+- Corrected matched SIL-IS reference handling so one canonical matched-SIL curve is selected per analyte and reused as the analyte's own SIL-IS pair when matched-SIL reference mode is active.
+- The matched-SIL reference curve's range is selected using calibration criteria plus its QC performance against nominal concentrations; its calculated QC concentrations then serve as the reference for surrogate pairs.
+- For an analyte paired with its own matched SIL-IS, calculated concentration and matched-SIL reference concentration are now identical by construction, so QC bias versus matched SIL-IS is exactly zero. QC precision remains independently measurable.
+
 ## [0.5.25] - 2026-08-30
 
 ### Heatmap failed-pair de-emphasis
