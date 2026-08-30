@@ -2,6 +2,14 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.31] - 2026-08-30
+
+### Automatic matched-SIL dependency refresh
+- When QC reference is `Matched SIL-IS calculated concentration`, manually editing an analyte's matched SIL-IS calibration curve now triggers recalculation of all analyte–IS pairs for that analyte.
+- Each surrogate retains its own current calibrator selection/range; only the dependent QC reference concentrations, QC bias metrics, QC pass/fail, overall pass/fail, and ranking/heatmap values are refreshed.
+- The edited matched SIL-IS pair itself is recomputed first, then its updated calculated QC concentrations become the shared reference for all surrogate comparisons.
+- Pair Ranking and Heatmap are refreshed immediately so they remain consistent with Pair Detail after a matched SIL-IS edit.
+
 ## [0.5.30] - 2026-08-30
 
 ### Surrogate heatmap pandas import fix
