@@ -920,6 +920,9 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
             }
             rankings.append(row)
 
+    analyte_rt = {str(a): _median_component_rt(cal_rt, a) for a in analytes}
+    is_rt = {str(i): _median_component_rt(cal_rt, i) for i in is_names}
+
     ranking = pd.DataFrame(rankings)
     if not ranking.empty:
         ranking = ranking.sort_values(
@@ -929,6 +932,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
     return {
         "ranking": ranking, "stage1": pd.DataFrame(stage1_rows),
         "criteria": criteria, "analytes": analytes, "internal_standards": is_names,
+        "analyte_rt": analyte_rt, "is_rt": is_rt,
         "is_metadata": is_meta.reset_index() if len(is_meta) else pd.DataFrame(),
         "pair_count_requested": int(len(analytes) * len(is_names)),
         "qc_sample_mapping": qc_sample_mapping,
@@ -1273,10 +1277,40 @@ def sync_pair_amr_to_surrogates(result, analyte, source_is):
     return {"updated": updated, "failed": failed, "exclusions": exclusions}
 
 
-def pair_metric_matrix(result, metric="QC Mean |Bias| %"):
+def _median_component_rt(rt_table, component):
+    if rt_table is None or getattr(rt_table, "empty", True) or component not in rt_table.columns:
+        return np.nan
+    vals = _num(rt_table[component]).to_numpy(float)
+    vals = vals[np.isfinite(vals)]
+    return float(np.nanmedian(vals)) if vals.size else np.nan
+
+
+def pair_metric_matrix(result, metric="QC Mean |Bias| %", order="Retention time"):
     r = result.get("ranking", pd.DataFrame())
-    if r.empty or metric not in r.columns: return pd.DataFrame()
-    return r.pivot_table(index="Analyte", columns="Internal Standard", values=metric, aggfunc="first")
+    if r.empty or metric not in r.columns:
+        return pd.DataFrame()
+    matrix = r.pivot_table(
+        index="Analyte", columns="Internal Standard", values=metric, aggfunc="first"
+    )
+
+    if order == "Retention time":
+        analyte_rt = result.get("analyte_rt", {})
+        is_rt = result.get("is_rt", {})
+
+        def rt_key(name, lookup):
+            value = lookup.get(str(name), np.nan)
+            return (0, float(value), str(name).casefold()) if np.isfinite(value) else (1, np.inf, str(name).casefold())
+
+        matrix = matrix.reindex(
+            index=sorted(matrix.index.tolist(), key=lambda n: rt_key(n, analyte_rt)),
+            columns=sorted(matrix.columns.tolist(), key=lambda n: rt_key(n, is_rt)),
+        )
+    elif order == "Alphabetical":
+        matrix = matrix.reindex(
+            index=sorted(matrix.index.tolist(), key=lambda n: str(n).casefold()),
+            columns=sorted(matrix.columns.tolist(), key=lambda n: str(n).casefold()),
+        )
+    return matrix
 
 
 def export_surrogate_workbook(result, path):
