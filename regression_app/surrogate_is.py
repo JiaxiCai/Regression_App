@@ -47,6 +47,49 @@ def load_surrogate_data(path):
     return normalize_generic_long(raw), {"format": "Long format"}
 
 
+def load_user_amr(path):
+    """Load user-defined analyte AMRs from CSV/Excel.
+
+    Required logical fields are analyte/component name, LLOQ, and ULOQ.
+    Common header variants are recognized automatically.
+    """
+    path = Path(path)
+    raw = pd.read_excel(path) if path.suffix.lower() in {".xlsx", ".xls"} else pd.read_csv(path)
+    cols = list(raw.columns)
+    analyte_col = _first_existing(cols, [
+        "Analyte", "Analyte Component", "analyte_component", "Component",
+        "Component Name", "Compound",
+    ])
+    lloq_col = _first_existing(cols, ["LLOQ", "LLoQ", "Lower Limit", "AMR LLOQ", "Lower"])
+    uloq_col = _first_existing(cols, ["ULOQ", "ULoQ", "Upper Limit", "AMR ULOQ", "Upper"])
+    missing = [
+        name for name, col in [("analyte", analyte_col), ("LLOQ", lloq_col), ("ULOQ", uloq_col)]
+        if col is None
+    ]
+    if missing:
+        raise ValueError("Could not identify user-AMR columns: " + ", ".join(missing))
+
+    out = pd.DataFrame({
+        "Analyte": raw[analyte_col].astype(str).str.strip(),
+        "LLOQ": _num(raw[lloq_col]),
+        "ULOQ": _num(raw[uloq_col]),
+    }).replace([np.inf, -np.inf], np.nan).dropna()
+    out = out[(out["LLOQ"] > 0) & (out["ULOQ"] >= out["LLOQ"])]
+    if out.empty:
+        raise ValueError("No valid positive user-defined AMRs were found.")
+    return out.drop_duplicates("Analyte", keep="last").reset_index(drop=True)
+
+
+def user_amr_lookup(amr_table):
+    if amr_table is None or len(amr_table) == 0:
+        return {}
+    return {
+        str(r["Analyte"]): (float(r["LLOQ"]), float(r["ULOQ"]))
+        for _, r in amr_table.iterrows()
+        if np.isfinite(r["LLOQ"]) and np.isfinite(r["ULOQ"])
+    }
+
+
 def normalize_targetlynx(df):
     if "Compound" not in df.columns:
         raise ValueError("TargetLynx table does not contain Compound.")
@@ -312,7 +355,7 @@ def _qc_summary(calc, nominal):
     }
 
 
-def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_sample_mapping=None):
+def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_sample_mapping=None, user_amr=None):
     criteria = criteria or SurrogateCriteria()
     data = apply_component_mapping(normalized, component_mapping)
     data = apply_qc_sample_mapping(data, qc_sample_mapping)
@@ -328,21 +371,33 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
     if not analytes: raise ValueError("No analyte components with calibration concentrations were detected.")
     if not is_names: raise ValueError("No internal-standard components were detected.")
     groups = _group_lookup(data)
+    amr_lookup = user_amr_lookup(user_amr)
 
-    rankings = []; stage1_rows = []; stage1_levels = {}
+    rankings = []; stage1_rows = []; stage1_levels = {}; stage1_sources = {}
     for analyte in analytes:
         idx = cal_area.index.intersection(cal_nom.index)
         x = _num(cal_nom.loc[idx, analyte]); y = _num(cal_area.loc[idx, analyte])
         valid = np.isfinite(x) & np.isfinite(y) & (x > 0)
-        levels, s1 = select_stage1_levels(x[valid], y[valid], criteria)
+        if str(analyte) in amr_lookup:
+            user_lloq, user_uloq = amr_lookup[str(analyte)]
+            xd = np.asarray(x[valid], float); yd = np.asarray(y[valid], float)
+            level_mask = (xd >= user_lloq) & (xd <= user_uloq)
+            levels = sorted(np.unique(xd[level_mask]).astype(float).tolist())
+            s1 = _fit_candidate(xd[level_mask], yd[level_mask], criteria) if int(level_mask.sum()) >= criteria.min_calibrators else None
+            amr_source = "User-defined"
+        else:
+            levels, s1 = select_stage1_levels(x[valid], y[valid], criteria)
+            amr_source = "Automatic"
         stage1_rows.append({
             "Analyte": analyte, "Group": groups.get(analyte, analyte),
+            "AMR Source": amr_source,
             "Stage 1 Pass": bool(levels), "Stage 1 LLOQ": min(levels) if levels else np.nan,
             "Stage 1 ULOQ": max(levels) if levels else np.nan, "Stage 1 n": len(levels),
             "Stage 1 Max |Bias| %": s1["max_cal_abs_bias_pct"] if s1 else np.nan,
             "Stage 1 Fit R2": s1["fit_r2"] if s1 else np.nan,
         })
         stage1_levels[str(analyte)] = list(map(float, levels))
+        stage1_sources[str(analyte)] = amr_source
         if not levels: continue
 
         for is_name in is_names:
@@ -350,7 +405,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
             idx = cal_area.index.intersection(cal_nom.index)
             xa = _num(cal_nom.loc[idx, analyte]); aa = _num(cal_area.loc[idx, analyte])
             ia = _num(cal_area.loc[idx, is_name])
-            valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & xa.isin(levels)
+            valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & xa.isin(active_levels)
             if int(valid.sum()) < criteria.min_calibrators: continue
             xfit = xa[valid].to_numpy(float); ratio = (aa[valid] / ia[valid]).to_numpy(float)
             m = _fit_candidate(xfit, ratio, criteria)
@@ -377,6 +432,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
             )
             row = {
                 "Analyte": analyte, "Group": groups.get(analyte, analyte), "Internal Standard": is_name,
+                "AMR Source": stage1_sources.get(str(analyte), "Automatic"),
                 "Pass": bool(m["pass_cal"] and qc_pass), "Calibration Pass": bool(m["pass_cal"]), "QC Pass": qc_pass,
                 "n Cal": m["n_cal"], "LLOQ": m["lloq"], "ULOQ": m["uloq"], "Span Ratio": m["uloq"] / m["lloq"],
                 "Max Cal |Bias| %": m["max_cal_abs_bias_pct"], "Mean Cal |Bias| %": m["mean_cal_abs_bias_pct"],
@@ -397,7 +453,10 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
         "criteria": criteria, "analytes": analytes, "internal_standards": is_names,
         "pair_count_requested": int(len(analytes) * len(is_names)),
         "qc_sample_mapping": qc_sample_mapping,
+        "user_amr": user_amr,
         "stage1_levels": stage1_levels,
+        "stage1_sources": stage1_sources,
+        "manual_exclusions": {},
         "_cache": {
             "cal_area": cal_area, "qc_area": qc_area,
             "cal_nom": cal_nom, "qc_nom": qc_nom,
@@ -422,6 +481,10 @@ def compute_pair_detail(result, analyte, is_name):
     levels = result.get("stage1_levels", {}).get(str(analyte), [])
     if not levels:
         raise ValueError(f"No Stage 1 calibration range is available for {analyte}.")
+    excluded = set(
+        float(v) for v in result.get("manual_exclusions", {}).get((str(analyte), str(is_name)), [])
+    )
+    active_levels = [float(v) for v in levels if float(v) not in excluded]
 
     idx = cal_area.index.intersection(cal_nom.index)
     xa = _num(cal_nom.loc[idx, analyte]); aa = _num(cal_area.loc[idx, analyte])
@@ -471,14 +534,101 @@ def compute_pair_detail(result, analyte, is_name):
     ]
     summary = match.iloc[0].to_dict() if len(match) else {}
 
+    backcalc = fit.invert(ratio)
+    cal_detail = pd.DataFrame({
+        "Use": [True] * len(xfit),
+        "Nominal": xfit,
+        "Ratio": ratio,
+        "Back-calculated": backcalc,
+    })
+    cal_detail["Bias %"] = (cal_detail["Back-calculated"] - cal_detail["Nominal"]) / cal_detail["Nominal"] * 100.0
+    cal_detail["|Bias| %"] = np.abs(cal_detail["Bias %"])
+    # Add excluded Stage-1 levels back to the table for transparent manual editing.
+    if excluded:
+        all_valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & xa.isin(levels)
+        ex_mask = all_valid & xa.isin(list(excluded))
+        if int(ex_mask.sum()):
+            ex_x = xa[ex_mask].to_numpy(float)
+            ex_ratio = (aa[ex_mask] / ia[ex_mask]).to_numpy(float)
+            ex_calc = fit.invert(ex_ratio)
+            ex_df = pd.DataFrame({
+                "Use": [False] * len(ex_x),
+                "Nominal": ex_x,
+                "Ratio": ex_ratio,
+                "Back-calculated": ex_calc,
+            })
+            ex_df["Bias %"] = (ex_df["Back-calculated"] - ex_df["Nominal"]) / ex_df["Nominal"] * 100.0
+            ex_df["|Bias| %"] = np.abs(ex_df["Bias %"])
+            cal_detail = pd.concat([cal_detail, ex_df], ignore_index=True).sort_values("Nominal").reset_index(drop=True)
+
     return {
         "fit": fit,
         "x_cal": xfit,
         "ratio_cal": ratio,
+        "calibrators": cal_detail,
         "qc_by_level": by_level,
         "qc_samples": sample_detail,
         "summary": summary,
     }
+
+
+def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
+    """Apply manual calibrator exclusions to one pair and refresh its ranking summary."""
+    key = (str(analyte), str(is_name))
+    result.setdefault("manual_exclusions", {})[key] = sorted({float(v) for v in excluded_nominals})
+    detail = compute_pair_detail(result, analyte, is_name)
+    fit = detail["fit"]
+    cal = detail["calibrators"]
+    criteria = result["criteria"]
+
+    max_bias = float(cal.loc[cal["Use"], "|Bias| %"].max()) if cal["Use"].any() else np.nan
+    mean_bias = float(cal.loc[cal["Use"], "|Bias| %"].mean()) if cal["Use"].any() else np.nan
+    r2 = float(fit.stats.get("fit_r2", np.nan))
+    wr2 = float(fit.stats.get("weighted_r2", np.nan))
+    qc = detail["qc_samples"]
+    by, qs = _qc_summary(qc["Calculated"].to_numpy(float), qc["Nominal"].to_numpy(float)) if not qc.empty else (pd.DataFrame(), {})
+    qc_pass = bool(qs) and (
+        np.isfinite(qs.get("qc_mean_abs_bias_pct", np.nan))
+        and qs["qc_mean_abs_bias_pct"] <= criteria.max_qc_mean_abs_bias
+        and np.isfinite(qs.get("qc_max_abs_bias_pct", np.nan))
+        and qs["qc_max_abs_bias_pct"] <= criteria.max_qc_abs_bias
+        and (not np.isfinite(qs.get("qc_max_cv_pct", np.nan)) or qs["qc_max_cv_pct"] <= criteria.max_qc_cv)
+    )
+    cal_pass = (
+        len(fit.x) >= criteria.min_calibrators
+        and np.isfinite(max_bias) and max_bias <= criteria.max_calibrator_bias
+        and np.isfinite(r2) and r2 >= criteria.min_r2
+    )
+
+    ranking = result["ranking"]
+    mask = (
+        ranking["Analyte"].astype(str).eq(str(analyte))
+        & ranking["Internal Standard"].astype(str).eq(str(is_name))
+    )
+    if mask.any():
+        active = cal.loc[cal["Use"], "Nominal"].to_numpy(float)
+        updates = {
+            "AMR Source": "Manual edited" if excluded_nominals else result.get("stage1_sources", {}).get(str(analyte), "Automatic"),
+            "Pass": bool(cal_pass and qc_pass),
+            "Calibration Pass": bool(cal_pass),
+            "QC Pass": bool(qc_pass),
+            "n Cal": int(len(active)),
+            "LLOQ": float(np.min(active)) if len(active) else np.nan,
+            "ULOQ": float(np.max(active)) if len(active) else np.nan,
+            "Span Ratio": float(np.max(active) / np.min(active)) if len(active) else np.nan,
+            "Max Cal |Bias| %": max_bias,
+            "Mean Cal |Bias| %": mean_bias,
+            "Fit R2": r2,
+            "Weighted R2": wr2,
+            "QC n": qs.get("qc_n", 0),
+            "QC Levels": qs.get("qc_levels", 0),
+            "QC Mean |Bias| %": qs.get("qc_mean_abs_bias_pct", np.nan),
+            "QC Max |Bias| %": qs.get("qc_max_abs_bias_pct", np.nan),
+            "QC Max CV %": qs.get("qc_max_cv_pct", np.nan),
+        }
+        for col, value in updates.items():
+            result["ranking"].loc[mask, col] = value
+    return compute_pair_detail(result, analyte, is_name)
 
 
 def pair_metric_matrix(result, metric="QC Mean |Bias| %"):
