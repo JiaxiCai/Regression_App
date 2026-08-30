@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel,
     QPushButton, QFileDialog, QComboBox, QDoubleSpinBox, QSpinBox,
-    QTableWidget, QTableWidgetItem, QTabWidget, QHeaderView, QMessageBox
+    QTableWidget, QTableWidgetItem, QTabWidget, QHeaderView, QMessageBox, QMenu
 )
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -52,6 +52,7 @@ def install(MainWindow):
         self.sis_user_amr = None
         self.sis_user_amr_path = None
         self.sis_updating_cal_table = False
+        self.sis_rank_hidden_columns = set()
         _build_tab(self)
     MainWindow.__init__ = wrapped_init
 
@@ -198,6 +199,10 @@ def _build_tab(w):
     clear_rank_filter.clicked.connect(lambda: _clear_ranking_filter(w))
     rank_controls.addWidget(clear_rank_filter)
 
+    w.sis_rank_columns_button = QPushButton("Columns")
+    w.sis_rank_columns_button.clicked.connect(lambda: _show_ranking_columns_menu(w))
+    rank_controls.addWidget(w.sis_rank_columns_button)
+
     rank_controls.addStretch()
     w.sis_rank_count = QLabel("")
     rank_controls.addWidget(w.sis_rank_count)
@@ -205,6 +210,7 @@ def _build_tab(w):
     w.sis_ranking = QTableWidget(); w.sis_ranking.setSelectionBehavior(QTableWidget.SelectRows)
     w.sis_ranking.setSelectionMode(QTableWidget.SingleSelection)
     configure_sortable_table(w.sis_ranking)
+    w.sis_ranking.horizontalHeader().setSectionsMovable(True)
     rl.addWidget(make_table_filter_bar(w.sis_ranking, rank_page))
     w.sis_ranking.itemSelectionChanged.connect(lambda: _selection_changed(w))
     rl.addWidget(w.sis_ranking); outtabs.addTab(rank_page, "Pair Ranking")
@@ -564,9 +570,64 @@ def _clear_ranking_filter(w):
         w.sis_rank_filter_value.setCurrentIndex(0)
 
 
+def _show_ranking_columns_menu(w):
+    if not w.sis_result:
+        return
+    rank = w.sis_result.get("ranking")
+    if rank is None or rank.empty:
+        return
+    menu = QMenu(w.sis_rank_columns_button)
+    for col in rank.columns:
+        action = menu.addAction(str(col))
+        action.setCheckable(True)
+        action.setChecked(str(col) not in w.sis_rank_hidden_columns)
+        action.toggled.connect(
+            lambda checked, name=str(col): _set_ranking_column_visible(w, name, checked)
+        )
+    menu.addSeparator()
+    show_all = menu.addAction("Show All")
+    show_all.triggered.connect(lambda: _show_all_ranking_columns(w))
+    menu.exec(w.sis_rank_columns_button.mapToGlobal(w.sis_rank_columns_button.rect().bottomLeft()))
+
+
+def _set_ranking_column_visible(w, column, visible):
+    if visible:
+        w.sis_rank_hidden_columns.discard(str(column))
+    else:
+        w.sis_rank_hidden_columns.add(str(column))
+    for c in range(w.sis_ranking.columnCount()):
+        item = w.sis_ranking.horizontalHeaderItem(c)
+        if item is not None and item.text() == str(column):
+            w.sis_ranking.setColumnHidden(c, not visible)
+            break
+
+
+def _show_all_ranking_columns(w):
+    w.sis_rank_hidden_columns.clear()
+    for c in range(w.sis_ranking.columnCount()):
+        w.sis_ranking.setColumnHidden(c, False)
+
+
+def _apply_ranking_column_visibility(w):
+    if not hasattr(w, "sis_rank_hidden_columns"):
+        return
+    for c in range(w.sis_ranking.columnCount()):
+        item = w.sis_ranking.horizontalHeaderItem(c)
+        if item is not None:
+            w.sis_ranking.setColumnHidden(c, item.text() in w.sis_rank_hidden_columns)
+
+
 def _refresh_ranking_view(w, preferred_pair=None):
     if not w.sis_result:
         return
+    header = w.sis_ranking.horizontalHeader()
+    prior_order = []
+    if w.sis_ranking.columnCount():
+        prior_order = [
+            w.sis_ranking.horizontalHeaderItem(header.logicalIndex(v)).text()
+            for v in range(header.count())
+            if w.sis_ranking.horizontalHeaderItem(header.logicalIndex(v)) is not None
+        ]
     rank = w.sis_result.get("ranking")
     if rank is None:
         return
@@ -587,6 +648,24 @@ def _refresh_ranking_view(w, preferred_pair=None):
         view = rank.loc[mask]
 
     _fill_table(w.sis_ranking, view.reset_index(drop=True))
+    header = w.sis_ranking.horizontalHeader()
+    header.setSectionsMovable(True)
+    if prior_order:
+        desired = [name for name in prior_order if name in view.columns] + [
+            str(c) for c in view.columns if str(c) not in prior_order
+        ]
+        for target_visual, name in enumerate(desired):
+            logical = next(
+                (c for c in range(w.sis_ranking.columnCount())
+                 if w.sis_ranking.horizontalHeaderItem(c) is not None
+                 and w.sis_ranking.horizontalHeaderItem(c).text() == name),
+                None,
+            )
+            if logical is not None:
+                current_visual = header.visualIndex(logical)
+                if current_visual != target_visual:
+                    header.moveSection(current_visual, target_visual)
+    _apply_ranking_column_visibility(w)
     if hasattr(w, "sis_rank_count"):
         w.sis_rank_count.setText(f"{len(view):,} displayed / {len(rank):,} total pair(s)")
 
