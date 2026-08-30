@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -363,6 +363,16 @@ def _group_lookup(normalized):
     )
 
 
+def _criteria_for_analyte(criteria, analyte, analyte_fit_settings=None):
+    """Return a criteria copy with optional analyte-specific model/origin overrides."""
+    if analyte_fit_settings is None:
+        return criteria
+    settings = analyte_fit_settings.get(str(analyte), {})
+    model_name = str(settings.get("model_name", criteria.model_name) or criteria.model_name)
+    origin_mode = str(settings.get("origin_mode", criteria.origin_mode) or criteria.origin_mode)
+    return replace(criteria, model_name=model_name, origin_mode=origin_mode)
+
+
 def _fit_model(x, y, criteria):
     lookup = dict(MODEL_SPECS)
     if criteria.model_name not in lookup:
@@ -590,7 +600,7 @@ def _targetlynx_candidate_levels(data, analyte):
     return sorted(np.unique(nominal[valid].to_numpy(float)).tolist())
 
 
-def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_sample_mapping=None, user_amr=None, calibrator_source_mode="Stage 1"):
+def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_sample_mapping=None, user_amr=None, calibrator_source_mode="Stage 1", analyte_fit_settings=None):
     criteria = criteria or SurrogateCriteria()
     data = apply_component_mapping(normalized, component_mapping)
     data = apply_qc_sample_mapping(data, qc_sample_mapping)
@@ -639,6 +649,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
     rankings = []; stage1_rows = []; stage1_levels = {}; stage1_sources = {}
     auto_pair_exclusions = {}; stage2_iterations = {}
     for analyte in analytes:
+        analyte_criteria = _criteria_for_analyte(criteria, analyte, analyte_fit_settings)
         idx = cal_area.index.intersection(cal_nom.index)
         x = _num(cal_nom.loc[idx, analyte]); y = _num(cal_area.loc[idx, analyte])
         valid = np.isfinite(x) & np.isfinite(y) & (x > 0)
@@ -646,7 +657,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
             levels = _targetlynx_candidate_levels(data, analyte)
             xd = np.asarray(x[valid], float); yd = np.asarray(y[valid], float)
             level_mask = np.isin(xd, levels)
-            s1 = _fit_candidate(xd[level_mask], yd[level_mask], criteria) if int(level_mask.sum()) >= criteria.min_calibrators else None
+            s1 = _fit_candidate(xd[level_mask], yd[level_mask], analyte_criteria) if int(level_mask.sum()) >= analyte_criteria.min_calibrators else None
             amr_source = "TargetLynx Primary Flags"
         elif str(analyte) in amr_lookup:
             user_lloq, user_uloq = amr_lookup[str(analyte)]
@@ -656,11 +667,13 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
             s1 = _fit_candidate(xd[level_mask], yd[level_mask], criteria) if int(level_mask.sum()) >= criteria.min_calibrators else None
             amr_source = "User-defined"
         else:
-            levels, s1 = select_stage1_levels(x[valid], y[valid], criteria)
+            levels, s1 = select_stage1_levels(x[valid], y[valid], analyte_criteria)
             amr_source = "Automatic"
         stage1_rows.append({
             "Analyte": analyte, "Group": groups.get(analyte, analyte),
             "AMR Source": amr_source,
+            "Regression Model": analyte_criteria.model_name,
+            "Origin Handling": analyte_criteria.origin_mode,
             "Stage 1 Pass": bool(levels), "Stage 1 LLOQ": min(levels) if levels else np.nan,
             "Stage 1 ULOQ": max(levels) if levels else np.nan, "Stage 1 n": len(levels),
             "Stage 1 Max |Bias| %": s1["max_cal_abs_bias_pct"] if s1 else np.nan,
@@ -680,9 +693,9 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                 np.isfinite(xa_sil) & np.isfinite(aa_sil) & np.isfinite(ia_sil)
                 & (xa_sil > 0) & (ia_sil > 0) & np.isin(xa_sil, levels)
             )
-            if int(sil_valid.sum()) >= criteria.min_calibrators:
+            if int(sil_valid.sum()) >= analyte_criteria.min_calibrators:
                 sil_iter = _fit_pair_iterative(
-                    xa_sil[sil_valid], aa_sil[sil_valid] / ia_sil[sil_valid], criteria
+                    xa_sil[sil_valid], aa_sil[sil_valid] / ia_sil[sil_valid], analyte_criteria
                 )
                 if sil_iter is not None:
                     matched_sil_fit = sil_iter["metrics"]
@@ -693,9 +706,9 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
             aa = cal_area_np[str(analyte)]
             ia = cal_area_np[str(is_name)]
             valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & np.isin(xa, levels)
-            if int(valid.sum()) < criteria.min_calibrators: continue
+            if int(valid.sum()) < analyte_criteria.min_calibrators: continue
             xstart = xa[valid]; rstart = aa[valid] / ia[valid]
-            iterative = _fit_pair_iterative(xstart, rstart, criteria)
+            iterative = _fit_pair_iterative(xstart, rstart, analyte_criteria)
             if iterative is None: continue
             m = iterative["metrics"]
             fit = m["fit"]
@@ -750,6 +763,8 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                     rt_delta = float(np.nanmedian(np.abs(art[rv] - irt[rv])))
             row = {
                 "Analyte": analyte, "Group": groups.get(analyte, analyte), "Internal Standard": is_name,
+                "Regression Model": analyte_criteria.model_name,
+                "Origin Handling": analyte_criteria.origin_mode,
                 "Pair Type": pair_type,
                 "IS Identity": is_class or "Unclassified",
                 "Paired Analyte": paired_analyte,
@@ -792,6 +807,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
         "qc_sample_mapping": qc_sample_mapping,
         "user_amr": user_amr,
         "calibrator_source_mode": calibrator_source_mode,
+        "analyte_fit_settings": analyte_fit_settings or {},
         "stage1_levels": stage1_levels,
         "stage1_sources": stage1_sources,
         "auto_pair_exclusions": auto_pair_exclusions,
@@ -849,7 +865,10 @@ def compute_pair_detail(result, analyte, is_name):
     function reconstructs the fit and QC sample tables on demand so memory
     usage does not scale with pair_count × QC_rows.
     """
-    criteria = result["criteria"]
+    base_criteria = result["criteria"]
+    criteria = _criteria_for_analyte(
+        base_criteria, analyte, result.get("analyte_fit_settings", {})
+    )
     cache = result.get("_cache", {})
     cal_area = cache.get("cal_area"); qc_area = cache.get("qc_area")
     cal_rt = cache.get("cal_rt"); qc_rt = cache.get("qc_rt")
