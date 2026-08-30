@@ -416,47 +416,49 @@ def select_stage1_levels(x, y, criteria):
     return levels, best
 
 
-def _qc_metrics(calc, reference):
+def _qc_metrics(calc, reference, group_levels=None):
     """Lightweight QC metrics for bulk pair screening without per-pair DataFrames."""
     calc = np.asarray(calc, float)
     ref = np.asarray(reference, float)
-    valid = np.isfinite(calc) & np.isfinite(ref) & (ref > 0)
+    levels = np.asarray(group_levels if group_levels is not None else reference, float)
+    valid = np.isfinite(calc) & np.isfinite(ref) & np.isfinite(levels) & (ref > 0) & (levels > 0)
     if not valid.any():
         return {}
-    calc = calc[valid]; ref = ref[valid]
+    calc = calc[valid]; ref = ref[valid]; levels = levels[valid]
     bias = (calc - ref) / ref * 100.0
-    levels = np.unique(ref)
-    max_cv = np.nan
+    unique_levels = np.unique(levels)
     cvs = []
-    for level in levels:
-        vals = calc[ref == level]
+    for level in unique_levels:
+        vals = calc[levels == level]
         if len(vals) > 1:
             mean = float(np.mean(vals))
             if np.isfinite(mean) and mean != 0:
                 cvs.append(float(np.std(vals, ddof=1) / mean * 100.0))
-    if cvs:
-        max_cv = float(np.nanmax(cvs))
     return {
         "qc_n": int(len(calc)),
-        "qc_levels": int(len(levels)),
+        "qc_levels": int(len(unique_levels)),
         "qc_mean_abs_bias_pct": float(np.mean(np.abs(bias))),
         "qc_max_abs_bias_pct": float(np.max(np.abs(bias))),
-        "qc_max_cv_pct": max_cv,
+        "qc_max_cv_pct": float(np.nanmax(cvs)) if cvs else np.nan,
     }
 
 
-def _qc_summary(calc, nominal):
-    d = pd.DataFrame({"calc": calc, "nominal": nominal}).replace([np.inf, -np.inf], np.nan).dropna()
-    d = d[d["nominal"] > 0]
+def _qc_summary(calc, reference, group_levels=None):
+    calc = np.asarray(calc, float)
+    ref = np.asarray(reference, float)
+    levels = np.asarray(group_levels if group_levels is not None else reference, float)
+    d = pd.DataFrame({"calc": calc, "reference": ref, "level": levels})
+    d = d.replace([np.inf, -np.inf], np.nan).dropna()
+    d = d[(d["reference"] > 0) & (d["level"] > 0)]
     if d.empty:
         return pd.DataFrame(), {}
-    d["bias_pct"] = (d["calc"] - d["nominal"]) / d["nominal"] * 100.0
-    by = d.groupby("nominal", as_index=False).agg(
+    d["bias_pct"] = (d["calc"] - d["reference"]) / d["reference"] * 100.0
+    by = d.groupby("level", as_index=False).agg(
         n=("calc", "count"), mean_calc=("calc", "mean"), sd=("calc", "std"),
         mean_bias_pct=("bias_pct", "mean"),
-        mean_abs_bias_pct=("bias_pct", lambda s: float(np.nanmean(np.abs(s)))),
-        max_abs_bias_pct=("bias_pct", lambda s: float(np.nanmax(np.abs(s)))),
-    )
+        mean_abs_bias_pct=("bias_pct", lambda x: float(np.nanmean(np.abs(x)))),
+        max_abs_bias_pct=("bias_pct", lambda x: float(np.nanmax(np.abs(x)))),
+    ).rename(columns={"level": "nominal"})
     by["cv_pct"] = by["sd"] / by["mean_calc"] * 100.0
     return by, {
         "qc_n": int(len(d)), "qc_levels": int(by["nominal"].nunique()),
@@ -603,7 +605,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                     else:
                         qref = np.full_like(qnom, np.nan, dtype=float)
                         reference_basis = "Matched SIL-IS unavailable"
-                qs = _qc_metrics(qcalc, qref)
+                qs = _qc_metrics(qcalc, qref, qnom)
             else:
                 qs = {}
 
@@ -735,7 +737,7 @@ def compute_pair_detail(result, analyte, is_name):
             else:
                 qref = np.full_like(qnom, np.nan, dtype=float)
                 reference_basis = "Matched SIL-IS unavailable"
-        by_level, _ = _qc_summary(qcalc, qref)
+        by_level, _ = _qc_summary(qcalc, qref, qnom)
         selected_index = qidx[qvalid]
         if qc_meta is not None:
             md = qc_meta.reindex(selected_index)
@@ -846,6 +848,7 @@ def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
     by, qs = _qc_summary(
         qc["Calculated"].to_numpy(float),
         qc["Reference concentration"].to_numpy(float) if "Reference concentration" in qc.columns else qc["Nominal"].to_numpy(float),
+        qc["Nominal"].to_numpy(float),
     ) if not qc.empty else (pd.DataFrame(), {})
     qc_pass = bool(qs) and (
         np.isfinite(qs.get("qc_mean_abs_bias_pct", np.nan))
