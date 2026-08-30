@@ -2,6 +2,14 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.8] - 2026-08-29
+
+### Pair Detail layout
+- Reworked Surrogate IS Pair Detail into a side-by-side layout.
+- Calibration plot and toolbar are shown on the left.
+- Individual calibrator table and manual Include controls are shown on the right.
+- Removed the fixed-height calibrator table so both views can use the available vertical space more effectively.
+
 ## [0.5.7] - 2026-08-29
 
 ### Surrogate IS user-defined AMR and calibrator editing
