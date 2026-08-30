@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import traceback
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -1642,6 +1643,13 @@ def _export(w):
     path, _ = QFileDialog.getSaveFileName(w, "Export Surrogate IS Workbook", "surrogate_is_analysis.xlsx", "Excel Workbook (*.xlsx)")
     if not path: return
     try:
-        export_surrogate_workbook(w.sis_result, path); QMessageBox.information(w, "Export complete", f"Saved:\n{path}")
+        export_surrogate_workbook(w.sis_result, path)
+        QMessageBox.information(w, "Export complete", f"Saved:\n{path}")
     except Exception as exc:
-        QMessageBox.critical(w, "Export failed", str(exc))
+        details = traceback.format_exc()
+        box = QMessageBox(w)
+        box.setIcon(QMessageBox.Critical)
+        box.setWindowTitle("Export failed")
+        box.setText(str(exc))
+        box.setDetailedText(details)
+        box.exec()
