@@ -1,4 +1,4 @@
-# Regression App v0.5.30
+# Regression App v0.5.31
 
 A cross-platform PySide6 desktop workbench for analytical and clinical laboratory data analysis, with emphasis on calibration, method validation, LC-MS/MS workflows, and transparent statistical reporting.
 
@@ -82,6 +82,7 @@ Systematic analyte × internal-standard benchmarking for LC-MS/MS workflows.
 - Heatmap controls are arranged beside the plot for a larger plotting area
 - Matched SIL-IS reference uses one canonical own-SIL curve per analyte; the own-SIL pair therefore has zero bias versus its own matched-SIL reference while retaining its measured QC precision
 - Matched SIL reference range can either allow extrapolation (default) or restrict bias evaluation to the matched SIL-IS AMR overlap
+- Manual edits to a matched SIL-IS reference automatically refresh all surrogate QC bias/pass metrics for that analyte while preserving each surrogate's own calibrator range
 - Stage 2 iteratively fits each analyte/IS pair within the Stage-1 levels; if calibration criteria fail, the worst absolute-bias concentration level is removed and the pair is refit until it passes or reaches the minimum calibrator count
 - Optional user-defined AMR import from CSV/Excel using analyte/component, LLOQ, and ULOQ columns
 - User AMRs can be partial; unmatched analytes fall back to automatic Stage 1 selection
