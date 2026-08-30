@@ -759,6 +759,27 @@ def _usable_pair_levels(result, analyte, is_name):
     return sorted(np.unique(xa[valid].to_numpy(float)).tolist())
 
 
+def _effective_pair_levels(result, analyte, is_name):
+    """Return the current effective levels for a pair, honoring manual edits then automatic Stage 2 trimming."""
+    all_levels = _usable_pair_levels(result, analyte, is_name)
+    if not all_levels:
+        return []
+    key = (str(analyte), str(is_name))
+    manual = result.get("manual_exclusions", {})
+    if key in manual:
+        excluded = set(float(v) for v in manual.get(key, []))
+        return [float(v) for v in all_levels if float(v) not in excluded]
+
+    stage1 = set(float(v) for v in result.get("stage1_levels", {}).get(str(analyte), []))
+    auto_removed = set(
+        float(v) for v in result.get("auto_pair_exclusions", {}).get(key, [])
+    )
+    return [
+        float(v) for v in all_levels
+        if float(v) in stage1 and float(v) not in auto_removed
+    ]
+
+
 def compute_pair_detail(result, analyte, is_name):
     """Recompute detailed calibration/QC data for one selected pair only.
 
@@ -784,24 +805,9 @@ def compute_pair_detail(result, analyte, is_name):
         raise ValueError("No usable calibrator levels are available for this pair.")
 
     key = (str(analyte), str(is_name))
-    manual = result.get("manual_exclusions", {})
-    if key in manual:
-        excluded = set(float(v) for v in manual.get(key, []))
-        active_levels = [float(v) for v in all_levels if float(v) not in excluded]
-    else:
-        # Automatic state = Stage 1 candidate range followed by pair-specific
-        # greedy Stage 2 trimming. Levels outside Stage 1 remain visible for
-        # optional manual expansion.
-        stage1_set = set(float(v) for v in levels)
-        stage2_removed = set(
-            float(v) for v in result.get("auto_pair_exclusions", {}).get(key, [])
-        )
-        active_levels = [
-            float(v) for v in all_levels
-            if float(v) in stage1_set and float(v) not in stage2_removed
-        ]
-        active_set = set(active_levels)
-        excluded = set(float(v) for v in all_levels if float(v) not in active_set)
+    active_levels = _effective_pair_levels(result, analyte, is_name)
+    active_set = set(float(v) for v in active_levels)
+    excluded = set(float(v) for v in all_levels if float(v) not in active_set)
 
     idx = cal_area.index.intersection(cal_nom.index)
     xa = _num(cal_nom.loc[idx, analyte]); aa = _num(cal_area.loc[idx, analyte])
@@ -826,9 +832,12 @@ def compute_pair_detail(result, analyte, is_name):
         ]
         if len(sil):
             matched_sil = str(sil.iloc[0]["Component"])
+    matched_sil_levels = (
+        _effective_pair_levels(result, analyte, matched_sil) if matched_sil else []
+    )
     matched_sil_metrics = _fit_pair_from_cache(
-        cal_area, cal_nom, analyte, matched_sil, active_levels, criteria
-    ) if matched_sil else None
+        cal_area, cal_nom, analyte, matched_sil, matched_sil_levels, criteria
+    ) if matched_sil and matched_sil_levels else None
 
     qidx = qc_area.index.intersection(qc_nom.index)
     sample_detail = pd.DataFrame()
