@@ -1,4 +1,4 @@
-# Regression App v0.5.13
+# Regression App v0.5.14
 
 A cross-platform PySide6 desktop workbench for analytical and clinical laboratory data analysis, with emphasis on calibration, method validation, LC-MS/MS workflows, and transparent statistical reporting.
 
@@ -72,7 +72,9 @@ Systematic analyte × internal-standard benchmarking for LC-MS/MS workflows.
 - Stage 1 automatically establishes an analyte-only contiguous calibration range
 - Optional user-defined AMR import from CSV/Excel using analyte/component, LLOQ, and ULOQ columns
 - User AMRs can be partial; unmatched analytes fall back to automatic Stage 1 selection
-- Pair Detail shows individual calibrator nominal concentration, analyte/IS ratio, back-calculated concentration, signed bias, and absolute bias
+- Pair Detail shows every usable calibrator level for the pair, including levels outside the Stage 1 AMR
+- Stage 1 levels start included; additional usable calibrators can be checked to manually expand the AMR
+- Individual calibrator nominal concentration, analyte/IS ratio, back-calculated concentration, signed bias, and absolute bias are shown
 - Manual pair-specific calibrator inclusion/exclusion with immediate refitting
 - Excluded calibrators remain visible in the table and plot
 - **Sync AMR to Other Surrogates** applies the selected pair's calibrator pattern to all IS candidates for the same analyte
