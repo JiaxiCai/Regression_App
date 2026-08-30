@@ -640,6 +640,46 @@ def _current_analytes_from_mapping(w):
     return sorted(x["Component"].astype(str).unique().tolist())
 
 
+def _refresh_analyte_fit_settings_from_mapping(w):
+    """Refresh analyte rows after mapping edits without losing existing overrides."""
+    if not hasattr(w, "sis_analyte_fit_table"):
+        return
+    existing = {}
+    table = w.sis_analyte_fit_table
+    for r in range(table.rowCount()):
+        item = table.item(r, 0)
+        if item is None:
+            continue
+        analyte = item.text()
+        model_widget = table.cellWidget(r, 1)
+        origin_widget = table.cellWidget(r, 2)
+        model_display = model_widget.currentText() if model_widget else "Global Default"
+        origin_display = origin_widget.currentText() if origin_widget else "Global Default"
+        existing[analyte] = {
+            "model_display": model_display,
+            "origin_display": origin_display,
+            "model_name": (
+                w.sis_model.currentText()
+                if model_display == "Global Default" else model_display
+            ),
+            "origin_mode": (
+                w.sis_origin.currentText()
+                if origin_display == "Global Default" else origin_display
+            ),
+        }
+    if existing:
+        w.sis_analyte_fit_settings.update(existing)
+
+    desired = _current_analytes_from_mapping(w)
+    current = [
+        table.item(r, 0).text()
+        for r in range(table.rowCount())
+        if table.item(r, 0) is not None
+    ]
+    if desired != current:
+        _populate_analyte_fit_settings(w)
+
+
 def _populate_analyte_fit_settings(w):
     if not hasattr(w, "sis_analyte_fit_table"):
         return
@@ -713,6 +753,7 @@ def _load(w):
         w.sis_qc_mapping = qc_sample_mapping_table(data)
         w.sis_file.setText(Path(path).name)
         _populate_mapping(w)
+        _populate_analyte_fit_settings(w)
         _populate_qc_mapping(w)
         n_an = data.loc[data["Component Role"] == "Analyte", "Component"].nunique()
         n_is = data.loc[data["Component Role"] == "IS", "Component"].nunique()
@@ -837,6 +878,8 @@ def _update_mapping_summary(w):
         f"{n_an} analyte(s) × {n_is} IS = {n_an * n_is:,} pair(s)"
         + (f"; {ignored} included component(s) ignored" if ignored else "")
     )
+    if hasattr(w, "sis_analyte_fit_table"):
+        _refresh_analyte_fit_settings_from_mapping(w)
 
 
 def _reset_mapping(w):
