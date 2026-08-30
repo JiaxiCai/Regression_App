@@ -298,6 +298,17 @@ def _build_tab(w):
     w.sis_heat_metric.currentTextChanged.connect(lambda _: _draw_heatmap(w))
     hc.addWidget(w.sis_heat_metric)
 
+    hc.addWidget(QLabel("Order"))
+    w.sis_heat_order = QComboBox()
+    w.sis_heat_order.addItems(["Retention time", "Alphabetical"])
+    w.sis_heat_order.setCurrentText("Retention time")
+    w.sis_heat_order.setToolTip(
+        "Retention time sorts analytes and internal standards independently by median calibrator RT; "
+        "components without a finite RT are placed last."
+    )
+    w.sis_heat_order.currentTextChanged.connect(lambda _: _draw_heatmap(w))
+    hc.addWidget(w.sis_heat_order)
+
     w.sis_heat_annotate = QCheckBox("Annotate values")
     w.sis_heat_annotate.toggled.connect(lambda _: _draw_heatmap(w))
     hc.addWidget(w.sis_heat_annotate)
@@ -460,6 +471,7 @@ def _save_surrogate_project(w):
             },
             "heatmap": {
                 "metric": w.sis_heat_metric.currentText(),
+                "order": w.sis_heat_order.currentText(),
                 "annotate": bool(w.sis_heat_annotate.isChecked()),
             },
         }
@@ -581,6 +593,7 @@ def _open_surrogate_project(w):
 
         heat = state.get("heatmap", {})
         _restore_combo_text(w.sis_heat_metric, heat.get("metric", "Fit R2"))
+        _restore_combo_text(w.sis_heat_order, heat.get("order", "Retention time"))
         w.sis_heat_annotate.setChecked(bool(heat.get("annotate", False)))
 
         if w.sis_user_amr is not None and len(w.sis_user_amr):
@@ -1410,7 +1423,11 @@ def _draw_heatmap(w):
     if not w.sis_result:
         w.sis_heat_canvas.draw_idle(); return
     metric = w.sis_heat_metric.currentText()
-    mat = pair_metric_matrix(w.sis_result, metric)
+    mat = pair_metric_matrix(
+        w.sis_result,
+        metric,
+        order=w.sis_heat_order.currentText() if hasattr(w, "sis_heat_order") else "Retention time",
+    )
     if mat.empty:
         ax = fig.add_subplot(111)
         ax.text(0.5, 0.5, f"No data available for {metric}", ha="center", va="center")
