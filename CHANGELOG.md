@@ -2,6 +2,15 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.12] - 2026-08-29
+
+### Pair-level SIL-IS versus surrogate classification
+- Pair Ranking now classifies each analyte × IS combination by its role for that analyte.
+- Pair Type is `Own SIL-IS` only when the selected internal standard is the analyte's matched isotope-labeled analog.
+- Every non-matched analyte × IS combination is classified as `Surrogate`, including SIL-labeled standards that belong to a different analyte.
+- Retains intrinsic IS identity and paired-analyte metadata separately for traceability.
+- Pair Detail now reports the pair-level classification rather than the intrinsic IS classification.
+
 ## [0.5.11] - 2026-08-29
 
 ### Surrogate IS performance and stability
