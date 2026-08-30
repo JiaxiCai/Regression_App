@@ -2,6 +2,16 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.9] - 2026-08-29
+
+### Surrogate IS AMR synchronization and richer QC identification
+- Added a Pair Detail button to synchronize the selected pair's current manual calibrator inclusion/exclusion pattern across all surrogate IS candidates for the same analyte.
+- AMR synchronization refits each affected analyte × IS pair and refreshes calibration, QC, ranking, and heatmap metrics.
+- Existing pair-specific manual exclusions on target surrogate fits are replaced by the synchronized calibrator pattern.
+- Preserved original sample metadata fields through surrogate-data normalization: Name, ID, Sample Text, and Type.
+- Expanded QC Sample Mapping to show Include, Name, ID, Sample Text, Type, automatic inclusion, and Sample Key.
+- Expanded QC Individual Bias output to show Name, ID, Sample Text, and Type alongside nominal concentration, analyte/IS ratio, calculated concentration, signed bias, absolute bias, and individual pass/fail.
+
 ## [0.5.8] - 2026-08-29
 
 ### Pair Detail layout
