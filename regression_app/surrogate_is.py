@@ -702,7 +702,6 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                 "Pair Type": pair_type,
                 "IS Identity": is_class or "Unclassified",
                 "Paired Analyte": paired_analyte,
-                "Matched SIL-IS": own_sil,
                 "Median |ΔRT|": rt_delta,
                 "QC Reference": reference_basis,
                 "AMR Source": "Stage 2 iterative" if iterative["removed_levels"] else stage1_sources.get(str(analyte), "Automatic"),
