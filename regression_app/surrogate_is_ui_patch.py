@@ -1482,10 +1482,10 @@ def _draw_heatmap(w):
     # matrix. Missing metric values are always shown in grey. When requested,
     # failed pairs are masked as well so Matplotlib itself renders the cell grey
     # rather than relying on post-hoc rectangle overlays.
-    rank = w.sis_result.get("ranking", pd.DataFrame())
+    rank = w.sis_result.get("ranking")
     status = np.full(values.shape, False, dtype=bool)
     status_known = np.full(values.shape, False, dtype=bool)
-    if rank is not None and not rank.empty and "Pass" in rank.columns:
+    if rank is not None and hasattr(rank, "empty") and not rank.empty and "Pass" in rank.columns:
         pass_lookup = {}
         for _, rec in rank.iterrows():
             raw_pass = rec["Pass"]
