@@ -16,11 +16,11 @@ from .targetlynx_converter import parse_targetlynx_compound_summary
 class SurrogateCriteria:
     model_name: str = "Linear 1/x"
     min_calibrators: int = 5
-    max_calibrator_bias: float = 20.0
-    min_r2: float = 0.99
+    max_calibrator_bias: float = 15.0
+    min_r2: float = 0.995
     max_qc_mean_abs_bias: float = 20.0
-    max_qc_abs_bias: float = 30.0
-    max_qc_cv: float = 20.0
+    max_qc_abs_bias: float = 20.0
+    max_qc_cv: float = 10.0
     qc_reference_basis: str = "Nominal concentration"
     matched_sil_range_policy: str = "Allow extrapolation"
     origin_mode: str = ORIGIN_EXCLUDE
