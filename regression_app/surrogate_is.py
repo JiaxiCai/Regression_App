@@ -524,6 +524,96 @@ def _fit_pair_from_cache(cal_area, cal_nom, analyte, is_name, levels, criteria):
     )
 
 
+def _fit_pair_contiguous_search(
+    x, ratio, criteria, qc_ratio=None, qc_nominal=None, qc_reference=None
+):
+    """Exhaustively search contiguous calibration windows and prefer the widest QC-passing fit."""
+    x = np.asarray(x, float)
+    ratio = np.asarray(ratio, float)
+    valid = np.isfinite(x) & np.isfinite(ratio) & (x > 0)
+    x = x[valid]; ratio = ratio[valid]
+    if len(x) == 0:
+        return None
+
+    levels = sorted(np.unique(x).astype(float).tolist())
+    if len(levels) < int(criteria.min_calibrators):
+        return None
+
+    qratio = None if qc_ratio is None else np.asarray(qc_ratio, float)
+    qnom = None if qc_nominal is None else np.asarray(qc_nominal, float)
+    qref = None if qc_reference is None else np.asarray(qc_reference, float)
+
+    candidates = []
+    tested = 0
+    for i in range(len(levels)):
+        for j in range(i + int(criteria.min_calibrators) - 1, len(levels)):
+            active = levels[i:j+1]
+            mask = np.isin(x, active)
+            metrics = _fit_candidate(x[mask], ratio[mask], criteria)
+            tested += 1
+            if metrics is None or not metrics["pass_cal"]:
+                continue
+
+            qs = {}
+            qc_pass = False
+            if qratio is not None and qnom is not None and qref is not None:
+                qvalid = (
+                    np.isfinite(qratio) & np.isfinite(qnom) & np.isfinite(qref)
+                    & (qnom >= metrics["lloq"]) & (qnom <= metrics["uloq"])
+                    & (qref > 0)
+                )
+                if qvalid.any():
+                    qcalc = metrics["fit"].invert(qratio[qvalid])
+                    qs = _qc_metrics(qcalc, qref[qvalid], qnom[qvalid])
+                    qc_pass = bool(qs) and (
+                        np.isfinite(qs.get("qc_mean_abs_bias_pct", np.nan))
+                        and qs["qc_mean_abs_bias_pct"] <= criteria.max_qc_mean_abs_bias
+                        and np.isfinite(qs.get("qc_max_abs_bias_pct", np.nan))
+                        and qs["qc_max_abs_bias_pct"] <= criteria.max_qc_abs_bias
+                        and (
+                            not np.isfinite(qs.get("qc_max_cv_pct", np.nan))
+                            or qs["qc_max_cv_pct"] <= criteria.max_qc_cv
+                        )
+                    )
+
+            span = float(metrics["uloq"] / metrics["lloq"]) if metrics["lloq"] > 0 else 0.0
+            # Prefer full calibration+QC pass. Then maximize contiguous span and
+            # level count. QC precision/bias and calibration quality are tie-breakers.
+            score = (
+                1 if qc_pass else 0,
+                np.log10(max(span, 1.0)),
+                len(active),
+                -float(qs.get("qc_max_cv_pct", np.inf)) if np.isfinite(qs.get("qc_max_cv_pct", np.nan)) else -np.inf,
+                -float(qs.get("qc_mean_abs_bias_pct", np.inf)) if np.isfinite(qs.get("qc_mean_abs_bias_pct", np.nan)) else -np.inf,
+                -float(qs.get("qc_max_abs_bias_pct", np.inf)) if np.isfinite(qs.get("qc_max_abs_bias_pct", np.nan)) else -np.inf,
+                -float(metrics["max_cal_abs_bias_pct"]),
+                float(metrics["fit_r2"]),
+            )
+            candidates.append({
+                "metrics": metrics,
+                "active_levels": [float(v) for v in active],
+                "qc_metrics": qs,
+                "qc_pass": bool(qc_pass),
+                "score": score,
+            })
+
+    if not candidates:
+        return None
+
+    best = max(candidates, key=lambda c: c["score"])
+    active_set = set(best["active_levels"])
+    return {
+        "metrics": best["metrics"],
+        "active_levels": best["active_levels"],
+        "removed_levels": [float(v) for v in levels if float(v) not in active_set],
+        "iterations": int(tested),
+        "start_n": int(len(levels)),
+        "qc_metrics": best["qc_metrics"],
+        "qc_pass": best["qc_pass"],
+        "search_mode": "Exhaustive contiguous",
+    }
+
+
 def _fit_pair_iterative(x, ratio, criteria, max_iterations=50):
     """Greedy Stage-2 fit: remove the worst-bias concentration level until calibration criteria pass."""
     x = np.asarray(x, float)
@@ -600,7 +690,7 @@ def _targetlynx_candidate_levels(data, analyte):
     return sorted(np.unique(nominal[valid].to_numpy(float)).tolist())
 
 
-def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_sample_mapping=None, user_amr=None, calibrator_source_mode="Stage 1", analyte_fit_settings=None):
+def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_sample_mapping=None, user_amr=None, calibrator_source_mode="Stage 1", analyte_fit_settings=None, pair_search_mode="Exhaustive contiguous"):
     criteria = criteria or SurrogateCriteria()
     data = apply_component_mapping(normalized, component_mapping)
     data = apply_qc_sample_mapping(data, qc_sample_mapping)
@@ -694,9 +784,14 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
                 & (xa_sil > 0) & (ia_sil > 0) & np.isin(xa_sil, levels)
             )
             if int(sil_valid.sum()) >= analyte_criteria.min_calibrators:
-                sil_iter = _fit_pair_iterative(
-                    xa_sil[sil_valid], aa_sil[sil_valid] / ia_sil[sil_valid], analyte_criteria
-                )
+                if pair_search_mode == "Exhaustive contiguous":
+                    sil_iter = _fit_pair_contiguous_search(
+                        xa_sil[sil_valid], aa_sil[sil_valid] / ia_sil[sil_valid], analyte_criteria
+                    )
+                else:
+                    sil_iter = _fit_pair_iterative(
+                        xa_sil[sil_valid], aa_sil[sil_valid] / ia_sil[sil_valid], analyte_criteria
+                    )
                 if sil_iter is not None:
                     matched_sil_fit = sil_iter["metrics"]
 
@@ -708,7 +803,39 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
             valid = np.isfinite(xa) & np.isfinite(aa) & np.isfinite(ia) & (xa > 0) & (ia > 0) & np.isin(xa, levels)
             if int(valid.sum()) < analyte_criteria.min_calibrators: continue
             xstart = xa[valid]; rstart = aa[valid] / ia[valid]
-            iterative = _fit_pair_iterative(xstart, rstart, analyte_criteria)
+
+            # Prepare all QC values once so exhaustive contiguous search can
+            # compare candidate windows using both calibration and QC performance.
+            qa_all = qc_area_np.get(str(analyte))
+            qi_all = qc_area_np.get(str(is_name))
+            qn_all = qc_nom_np.get(str(analyte))
+            qratio_all = qnom_all = qref_all = None
+            if qa_all is not None and qi_all is not None and qn_all is not None:
+                qbase = (
+                    np.isfinite(qa_all) & np.isfinite(qi_all) & np.isfinite(qn_all)
+                    & (qi_all > 0) & (qn_all > 0)
+                )
+                qratio_all = qa_all[qbase] / qi_all[qbase]
+                qnom_all = qn_all[qbase]
+                qref_all = qnom_all.copy()
+                if analyte_criteria.qc_reference_basis == "Matched SIL-IS calculated concentration":
+                    if matched_sil_fit is not None and matched_sil in qc_area_np:
+                        qsil_all = qc_area_np[str(matched_sil)]
+                        qbase = qbase & np.isfinite(qsil_all) & (qsil_all > 0)
+                        qratio_all = qa_all[qbase] / qi_all[qbase]
+                        qnom_all = qn_all[qbase]
+                        sil_ratio_all = qa_all[qbase] / qsil_all[qbase]
+                        qref_all = matched_sil_fit["fit"].invert(sil_ratio_all)
+                    else:
+                        qref_all = np.full_like(qnom_all, np.nan, dtype=float)
+
+            if pair_search_mode == "Exhaustive contiguous":
+                iterative = _fit_pair_contiguous_search(
+                    xstart, rstart, analyte_criteria,
+                    qc_ratio=qratio_all, qc_nominal=qnom_all, qc_reference=qref_all,
+                )
+            else:
+                iterative = _fit_pair_iterative(xstart, rstart, analyte_criteria)
             if iterative is None: continue
             m = iterative["metrics"]
             fit = m["fit"]
@@ -808,6 +935,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
         "user_amr": user_amr,
         "calibrator_source_mode": calibrator_source_mode,
         "analyte_fit_settings": analyte_fit_settings or {},
+        "pair_search_mode": pair_search_mode,
         "stage1_levels": stage1_levels,
         "stage1_sources": stage1_sources,
         "auto_pair_exclusions": auto_pair_exclusions,
