@@ -90,6 +90,17 @@ def _build_tab(w):
     g.addWidget(QLabel("Minimum calibrators"), 0, 2)
     w.sis_min_cal = QSpinBox(); w.sis_min_cal.setRange(3, 30); w.sis_min_cal.setValue(5)
     g.addWidget(w.sis_min_cal, 0, 3)
+    g.addWidget(QLabel("QC reference"), 0, 4)
+    w.sis_qc_reference = QComboBox()
+    w.sis_qc_reference.addItems([
+        "Nominal concentration",
+        "Matched SIL-IS calculated concentration",
+    ])
+    w.sis_qc_reference.setToolTip(
+        "Choose whether QC bias is calculated against the assigned nominal concentration "
+        "or against the concentration calculated using the analyte's matched SIL-IS curve."
+    )
+    g.addWidget(w.sis_qc_reference, 0, 5)
 
     specs = [
         ("Max cal |bias| %", "sis_cal_bias", 20.0), ("Minimum Fit R²", "sis_r2", 0.99),
@@ -105,7 +116,7 @@ def _build_tab(w):
         else:
             sp.setRange(0.0, 100.0); sp.setDecimals(2)
         sp.setValue(val); setattr(w, attr, sp); g.addWidget(sp, r, c + 1)
-    run = QPushButton("Run Surrogate IS Analysis"); run.clicked.connect(lambda: _run(w)); g.addWidget(run, 0, 4, 2, 1)
+    run = QPushButton("Run Surrogate IS Analysis"); run.clicked.connect(lambda: _run(w)); g.addWidget(run, 1, 4, 2, 2)
     root.addWidget(box)
 
     w.sis_note = QLabel(""); w.sis_note.setWordWrap(True); root.addWidget(w.sis_note)
@@ -115,7 +126,8 @@ def _build_tab(w):
     mapping_intro = QLabel(
         "Review the automatic compound assignments before analysis. Change Role to "
         "Analyte, Internal Standard, or Ignore; uncheck Include to exclude a component "
-        "from the current benchmark without changing its assignment."
+        "from the current benchmark. Internal standards can also be classified as SIL-IS or "
+        "Surrogate and assigned to their paired analyte."
     )
     mapping_intro.setWordWrap(True); ml.addWidget(mapping_intro)
     mapping_actions = QHBoxLayout()
@@ -132,9 +144,10 @@ def _build_tab(w):
     w.sis_pair_estimate = QLabel("Load a dataset to review assignments.")
     mapping_actions.addWidget(w.sis_pair_estimate)
     ml.addLayout(mapping_actions)
-    w.sis_mapping_table = QTableWidget(0, 6)
+    w.sis_mapping_table = QTableWidget(0, 8)
     w.sis_mapping_table.setHorizontalHeaderLabels([
-        "Include", "Component", "Automatic Role", "Role", "Calibrator Rows", "QC Rows"
+        "Include", "Component", "Automatic Role", "Role",
+        "IS Class", "Paired Analyte", "Calibrator Rows", "QC Rows"
     ])
     w.sis_mapping_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
     w.sis_mapping_table.horizontalHeader().setStretchLastSection(True)
@@ -266,7 +279,7 @@ def _criteria(w):
         model_name=w.sis_model.currentText(), min_calibrators=w.sis_min_cal.value(),
         max_calibrator_bias=w.sis_cal_bias.value(), min_r2=w.sis_r2.value(),
         max_qc_mean_abs_bias=w.sis_qc_mean_bias.value(), max_qc_abs_bias=w.sis_qc_max_bias.value(),
-        max_qc_cv=w.sis_qc_cv.value(),
+        max_qc_cv=w.sis_qc_cv.value(), qc_reference_basis=w.sis_qc_reference.currentText(),
     )
 
 
@@ -297,6 +310,9 @@ def _populate_mapping(w):
     if mapping is None:
         return
     table = w.sis_mapping_table
+    analytes = sorted(
+        mapping.loc[mapping["Role"].astype(str).eq("Analyte"), "Component"].astype(str).unique().tolist()
+    )
     table.blockSignals(True)
     table.setRowCount(len(mapping))
     for r, (_, rec) in enumerate(mapping.iterrows()):
@@ -305,7 +321,9 @@ def _populate_mapping(w):
         include.setCheckState(Qt.Checked if bool(rec["Include"]) else Qt.Unchecked)
         table.setItem(r, 0, include)
 
-        for c, key in [(1, "Component"), (2, "Automatic Role"), (4, "Calibrator Rows"), (5, "QC Rows")]:
+        for c, key in [
+            (1, "Component"), (2, "Automatic Role"), (6, "Calibrator Rows"), (7, "QC Rows")
+        ]:
             item = QTableWidgetItem(_fmt(rec[key]))
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
             table.setItem(r, c, item)
@@ -319,6 +337,30 @@ def _populate_mapping(w):
         role.currentTextChanged.connect(lambda _=None: _update_mapping_summary(w))
         table.setCellWidget(r, 3, role)
 
+        is_class = QComboBox()
+        is_class.addItems(["", "SIL-IS", "Surrogate"])
+        is_class.setCurrentText(str(rec.get("IS Class", "")))
+        table.setCellWidget(r, 4, is_class)
+
+        paired = QComboBox()
+        paired.addItem("")
+        paired.addItems(analytes)
+        paired.setCurrentText(str(rec.get("Paired Analyte", "")))
+        table.setCellWidget(r, 5, paired)
+
+        def update_is_controls(_=None, role_widget=role, class_widget=is_class, paired_widget=paired):
+            enabled = role_widget.currentText() == "Internal Standard"
+            class_widget.setEnabled(enabled)
+            paired_widget.setEnabled(enabled)
+            if not enabled:
+                class_widget.setCurrentText("")
+                paired_widget.setCurrentText("")
+            elif class_widget.currentText() == "":
+                class_widget.setCurrentText("Surrogate")
+
+        role.currentTextChanged.connect(update_is_controls)
+        update_is_controls()
+
     table.blockSignals(False)
     try:
         table.itemChanged.disconnect()
@@ -326,7 +368,6 @@ def _populate_mapping(w):
         pass
     table.itemChanged.connect(lambda item: _update_mapping_summary(w) if item.column() == 0 else None)
     _update_mapping_summary(w)
-
 
 def _mapping_from_ui(w):
     rows = []
@@ -339,17 +380,25 @@ def _mapping_from_ui(w):
         role = role_widget.currentText() if role_widget is not None else auto
         if role == "Internal Standard":
             role = "IS"
+        class_widget = table.cellWidget(r, 4)
+        paired_widget = table.cellWidget(r, 5)
+        is_class = class_widget.currentText() if class_widget is not None else ""
+        paired = paired_widget.currentText() if paired_widget is not None else ""
+        if role != "IS":
+            is_class = ""
+            paired = ""
         rows.append({
             "Component": component,
             "Automatic Role": auto,
             "Role": role,
+            "IS Class": is_class,
+            "Paired Analyte": paired,
             "Include": include,
-            "Calibrator Rows": int(float(table.item(r, 4).text() or 0)),
-            "QC Rows": int(float(table.item(r, 5).text() or 0)),
+            "Calibrator Rows": int(float(table.item(r, 6).text() or 0)),
+            "QC Rows": int(float(table.item(r, 7).text() or 0)),
         })
     import pandas as pd
     return pd.DataFrame(rows)
-
 
 def _update_mapping_summary(w):
     if not hasattr(w, "sis_mapping_table") or w.sis_mapping_table.rowCount() == 0:
@@ -536,7 +585,11 @@ def _fill_calibrator_table(w, df):
     w.sis_updating_cal_table = True
     sorting = table.isSortingEnabled()
     table.setSortingEnabled(False)
-    cols = ["Use", "Nominal", "Ratio", "Back-calculated", "Bias %", "|Bias| %"]
+    preferred = [
+        "Use", "Nominal", "Ratio", "Back-calculated",
+        "Analyte RT", "IS RT", "ΔRT", "Bias %", "|Bias| %"
+    ]
+    cols = [c for c in preferred if c in df.columns or c == "Use"]
     table.clear(); table.setRowCount(len(df)); table.setColumnCount(len(cols))
     table.setHorizontalHeaderLabels(cols)
     for r, (_, rec) in enumerate(df.iterrows()):
@@ -679,9 +732,13 @@ def _refresh_selected_pair(w, pair, detail, refresh_ranking=False):
     source = s.get("AMR Source", w.sis_result.get("stage1_sources", {}).get(pair[0], "Automatic"))
     w.sis_detail_label.setText(
         f"{pair[0]} / {pair[1]} — {'PASS' if s.get('Pass', False) else 'FAIL'}; "
+        f"{s.get('IS Class', 'Surrogate')} "
+        f"{'(matched)' if s.get('Matched SIL-IS', False) else ''}; "
         f"AMR {s.get('LLOQ', np.nan):g}–{s.get('ULOQ', np.nan):g} ({source}); "
+        f"median |ΔRT| {_fmt(s.get('Median |ΔRT|', np.nan))}; "
         f"max cal |bias| {s.get('Max Cal |Bias| %', np.nan):.2f}%; "
         f"Fit R² {s.get('Fit R2', np.nan):.6f}; "
+        f"QC reference: {s.get('QC Reference', '')}; "
         f"QC mean |bias| {_fmt(s.get('QC Mean |Bias| %', np.nan))}%; "
         f"QC max CV {_fmt(s.get('QC Max CV %', np.nan))}%."
     )
