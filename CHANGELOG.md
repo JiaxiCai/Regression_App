@@ -2,6 +2,15 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.28] - 2026-08-30
+
+### Robust heatmap masking
+- Replaced failed-pair rectangle overlays with an aligned boolean status mask rendered directly by Matplotlib.
+- When `Grey out failed pairs` is enabled, pairs with final `Pass = False` are masked and rendered grey by the heatmap colormap itself.
+- Missing/unavailable metric values are always rendered grey instead of appearing as unexplained white/transparent cells.
+- When value annotations are enabled, unavailable cells are labeled `N/A`.
+- Passing cells retain the normal metric color scale and colorbar.
+
 ## [0.5.27] - 2026-08-30
 
 ### Matched SIL-IS reference range policy
