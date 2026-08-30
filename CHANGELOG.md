@@ -2,6 +2,16 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.18] - 2026-08-29
+
+### Heatmap metric selection, annotations, and export
+- Expanded Pair Ranking summary metrics with minimum/maximum signed calibrator bias, minimum absolute calibrator bias, minimum/mean/maximum QC CV, and minimum/maximum signed/absolute QC bias.
+- Heatmap value selector now supports Fit R², Weighted R², calibration bias metrics, QC bias metrics, QC CV metrics, LLOQ, ULOQ, span ratio, retained calibrator count, QC level count, and Stage 2 iteration/removal counts.
+- Added an Annotate values checkbox to display cell values directly on the heatmap.
+- Annotation formatting adapts to R², percentages, counts, and general numeric metrics.
+- Added direct PNG and SVG heatmap export buttons.
+- Export filenames are generated from the selected metric and preserve the current annotation state.
+
 ## [0.5.17] - 2026-08-29
 
 ### TargetLynx Primary Flags calibrator-source mode
