@@ -3,7 +3,7 @@ set -u
 cd "$(dirname "$0")"
 
 echo "=========================================="
-echo " Regression App v0.5.11 - macOS Builder"
+echo " Regression App v0.5.12 - macOS Builder"
 echo "=========================================="
 echo
 
@@ -129,7 +129,7 @@ echo "[4/5] Creating ZIP..."
 rm -f RegressionApp-macOS.zip
 ditto -c -k --sequesterRsrc --keepParent dist/RegressionApp.app RegressionApp-macOS.zip || fail "Could not create ZIP."
 
-OUTPUT_DIR="$HOME/Desktop/RegressionApp-v0.5.11"
+OUTPUT_DIR="$HOME/Desktop/RegressionApp-v0.5.12"
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 cp -R dist/RegressionApp.app "$OUTPUT_DIR/"
@@ -137,4 +137,4 @@ cp RegressionApp-macOS.zip "$OUTPUT_DIR/"
 
 echo "[5/5] Finished."
 open "$OUTPUT_DIR"
-osascript -e 'display dialog "Regression App v0.5.11 built successfully and passed its packaged self-test." buttons {"OK"} default button "OK"'
+osascript -e 'display dialog "Regression App v0.5.12 built successfully and passed its packaged self-test." buttons {"OK"} default button "OK"'
