@@ -770,8 +770,7 @@ def _refresh_selected_pair(w, pair, detail, refresh_ranking=False):
     source = s.get("AMR Source", w.sis_result.get("stage1_sources", {}).get(pair[0], "Automatic"))
     w.sis_detail_label.setText(
         f"{pair[0]} / {pair[1]} — {'PASS' if s.get('Pass', False) else 'FAIL'}; "
-        f"{s.get('IS Class', 'Surrogate')} "
-        f"{'(matched)' if s.get('Matched SIL-IS', False) else ''}; "
+        f"{s.get('Pair Type', 'Surrogate')}; "
         f"AMR {s.get('LLOQ', np.nan):g}–{s.get('ULOQ', np.nan):g} ({source}); "
         f"median |ΔRT| {_fmt(s.get('Median |ΔRT|', np.nan))}; "
         f"max cal |bias| {s.get('Max Cal |Bias| %', np.nan):.2f}%; "
