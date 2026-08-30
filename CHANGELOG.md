@@ -2,6 +2,16 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.14] - 2026-08-29
+
+### Manual AMR expansion beyond Stage 1
+- Pair Detail now shows every usable calibrator level for the selected analyte × IS pair, not only levels retained by Stage 1.
+- Stage 1 levels are checked by default; usable levels outside Stage 1 are visible unchecked.
+- Users can manually check additional calibrators to expand a pair's AMR, or uncheck existing levels to shrink it.
+- Any checkbox edit creates an explicit pair-specific manual calibrator set and immediately refits calibration and QC metrics.
+- Manual AMR synchronization now copies the effective current calibrator pattern, including manually added levels outside Stage 1.
+- Pair ranking continues to label edited ranges as Manual edited.
+
 ## [0.5.13] - 2026-08-29
 
 ### Generic Pair Ranking filters
