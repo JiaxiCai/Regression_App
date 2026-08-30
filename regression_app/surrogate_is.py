@@ -133,6 +133,8 @@ def normalize_targetlynx(df):
     out["ID"] = df["ID"].astype(str) if "ID" in df.columns else ""
     out["Sample Text"] = df["Sample Text"].astype(str) if "Sample Text" in df.columns else ""
     out["Type"] = df["Type"].astype(str) if "Type" in df.columns else out["Sample Type"]
+    flag_col = _first_existing(df.columns, ["Primary Flags", "Primary Flag"])
+    out["Primary Flags"] = df[flag_col].astype(str) if flag_col else ""
     out["Component"] = df["Compound"].astype(str)
     out["Component Group"] = df["Compound"].astype(str)
     is_flag = df.get("Is Internal Standard", False)
@@ -157,6 +159,7 @@ def normalize_generic_long(df):
     source_id = _first_existing(cols, ["ID"])
     source_sample_text = _first_existing(cols, ["Sample Text"])
     source_type = _first_existing(cols, ["Type"])
+    primary_flags = _first_existing(cols, ["Primary Flags", "Primary Flag"])
     component_type = _first_existing(cols, ["Component Type", "Role"])
     component_name = _first_existing(cols, ["Component Name", "Compound", "Analyte"])
     component_group = _first_existing(cols, ["Component Group Name", "Component Group", "Analyte Group"])
@@ -186,6 +189,7 @@ def normalize_generic_long(df):
     )
     out["Sample Text"] = df[source_sample_text].astype(str) if source_sample_text else ""
     out["Type"] = df[source_type].astype(str) if source_type else out["Sample Type"]
+    out["Primary Flags"] = df[primary_flags].astype(str) if primary_flags else ""
     out["Component"] = df[component_name].astype(str)
     out["Component Group"] = (
         df[component_group].astype(str) if component_group else df[component_name].astype(str)
@@ -545,7 +549,31 @@ def _fit_pair_iterative(x, ratio, criteria, max_iterations=50):
     }
 
 
-def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_sample_mapping=None, user_amr=None):
+def _primary_flag_excluded(series):
+    """TargetLynx calibrator exclusion flags: X or lowercase l."""
+    text = series.fillna("").astype(str).str.strip()
+    return text.str.contains("X", regex=False) | text.str.contains("l", regex=False)
+
+
+def _targetlynx_candidate_levels(data, analyte):
+    """Levels retained by the user's TargetLynx Primary Flags for one analyte."""
+    if "Primary Flags" not in data.columns:
+        return []
+    rows = (
+        _sample_type_mask(data["Sample Type"], "cal")
+        & data["Component"].astype(str).eq(str(analyte))
+    )
+    x = data.loc[rows].copy()
+    if x.empty:
+        return []
+    nominal = _num(x["Nominal"])
+    area = _num(x["Area"])
+    excluded = _primary_flag_excluded(x["Primary Flags"])
+    valid = np.isfinite(nominal) & np.isfinite(area) & (nominal > 0) & ~excluded.to_numpy(bool)
+    return sorted(np.unique(nominal[valid].to_numpy(float)).tolist())
+
+
+def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_sample_mapping=None, user_amr=None, calibrator_source_mode="Stage 1"):
     criteria = criteria or SurrogateCriteria()
     data = apply_component_mapping(normalized, component_mapping)
     data = apply_qc_sample_mapping(data, qc_sample_mapping)
@@ -597,7 +625,13 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
         idx = cal_area.index.intersection(cal_nom.index)
         x = _num(cal_nom.loc[idx, analyte]); y = _num(cal_area.loc[idx, analyte])
         valid = np.isfinite(x) & np.isfinite(y) & (x > 0)
-        if str(analyte) in amr_lookup:
+        if calibrator_source_mode == "TargetLynx Primary Flags":
+            levels = _targetlynx_candidate_levels(data, analyte)
+            xd = np.asarray(x[valid], float); yd = np.asarray(y[valid], float)
+            level_mask = np.isin(xd, levels)
+            s1 = _fit_candidate(xd[level_mask], yd[level_mask], criteria) if int(level_mask.sum()) >= criteria.min_calibrators else None
+            amr_source = "TargetLynx Primary Flags"
+        elif str(analyte) in amr_lookup:
             user_lloq, user_uloq = amr_lookup[str(analyte)]
             xd = np.asarray(x[valid], float); yd = np.asarray(y[valid], float)
             level_mask = (xd >= user_lloq) & (xd <= user_uloq)
@@ -729,6 +763,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
         "pair_count_requested": int(len(analytes) * len(is_names)),
         "qc_sample_mapping": qc_sample_mapping,
         "user_amr": user_amr,
+        "calibrator_source_mode": calibrator_source_mode,
         "stage1_levels": stage1_levels,
         "stage1_sources": stage1_sources,
         "auto_pair_exclusions": auto_pair_exclusions,
