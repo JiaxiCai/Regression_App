@@ -106,6 +106,10 @@ def normalize_targetlynx(df):
     )
     out["Sample Name"] = df[name_col].astype(str)
     out["Sample Type"] = df.get("Type", "").astype(str)
+    out["Name"] = df["Name"].astype(str) if "Name" in df.columns else out["Sample Name"]
+    out["ID"] = df["ID"].astype(str) if "ID" in df.columns else ""
+    out["Sample Text"] = df["Sample Text"].astype(str) if "Sample Text" in df.columns else ""
+    out["Type"] = df["Type"].astype(str) if "Type" in df.columns else out["Sample Type"]
     out["Component"] = df["Compound"].astype(str)
     out["Component Group"] = df["Compound"].astype(str)
     is_flag = df.get("Is Internal Standard", False)
@@ -124,6 +128,10 @@ def normalize_generic_long(df):
     sample_index = _first_existing(cols, ["Sample Index", "Injection", "#", "ID"])
     sample_name = _first_existing(cols, ["Sample Name", "Name", "Sample Text"])
     sample_type = _first_existing(cols, ["Sample Type", "Type"])
+    source_name = _first_existing(cols, ["Name"])
+    source_id = _first_existing(cols, ["ID"])
+    source_sample_text = _first_existing(cols, ["Sample Text"])
+    source_type = _first_existing(cols, ["Type"])
     component_type = _first_existing(cols, ["Component Type", "Role"])
     component_name = _first_existing(cols, ["Component Name", "Compound", "Analyte"])
     component_group = _first_existing(cols, ["Component Group Name", "Component Group", "Analyte Group"])
@@ -146,6 +154,12 @@ def normalize_generic_long(df):
     )
     out["Sample Name"] = df[sample_name].astype(str)
     out["Sample Type"] = df[sample_type].astype(str)
+    out["Name"] = df[source_name].astype(str) if source_name else out["Sample Name"]
+    out["ID"] = df[source_id].astype(str) if source_id else (
+        df[sample_index].astype(str) if sample_index else ""
+    )
+    out["Sample Text"] = df[source_sample_text].astype(str) if source_sample_text else ""
+    out["Type"] = df[source_type].astype(str) if source_type else out["Sample Type"]
     out["Component"] = df[component_name].astype(str)
     out["Component Group"] = (
         df[component_group].astype(str) if component_group else df[component_name].astype(str)
@@ -212,24 +226,32 @@ def apply_component_mapping(normalized, mapping):
 def qc_sample_mapping_table(normalized):
     """Return one editable Include/Exclude row per detected QC sample."""
     qc = normalized.loc[_sample_type_mask(normalized["Sample Type"], "qc")].copy()
+    cols = [
+        "Sample Key", "Name", "ID", "Sample Text", "Type",
+        "Automatic Include", "Include",
+    ]
     if qc.empty:
-        return pd.DataFrame(columns=["Sample Key", "Sample Name", "Sample Type", "Automatic Include", "Include"])
+        return pd.DataFrame(columns=cols)
 
     rows = []
-    for (sample_key, sample_name), g in qc.groupby(["Sample Key", "Sample Name"], sort=False):
-        name_text = str(sample_name)
-        # Conservative automatic exclusion for explicitly labeled IS-stress samples.
-        normalized_name = name_text.casefold().replace("_", " ").replace("-", " ")
-        auto_include = "low is" not in normalized_name
+    for sample_key, g in qc.groupby("Sample Key", sort=False):
+        name = str(g["Name"].iloc[0]) if "Name" in g else str(g["Sample Name"].iloc[0])
+        sample_id = str(g["ID"].iloc[0]) if "ID" in g else ""
+        sample_text = str(g["Sample Text"].iloc[0]) if "Sample Text" in g else ""
+        sample_type = str(g["Type"].iloc[0]) if "Type" in g else str(g["Sample Type"].iloc[0])
+        searchable = " ".join([name, sample_id, sample_text, sample_type]).casefold()
+        searchable = searchable.replace("_", " ").replace("-", " ")
+        auto_include = "low is" not in searchable
         rows.append({
             "Sample Key": str(sample_key),
-            "Sample Name": name_text,
-            "Sample Type": str(g["Sample Type"].iloc[0]),
+            "Name": name,
+            "ID": sample_id,
+            "Sample Text": sample_text,
+            "Type": sample_type,
             "Automatic Include": bool(auto_include),
             "Include": bool(auto_include),
         })
     return pd.DataFrame(rows)
-
 
 def apply_qc_sample_mapping(normalized, mapping):
     """Exclude user-disabled QC samples while leaving calibrators and other rows unchanged."""
@@ -254,6 +276,19 @@ def _sample_type_mask(series, kind):
     if kind == "qc":
         return t.isin({"qc", "quality control", "control"})
     raise ValueError(kind)
+
+
+def _sample_metadata(normalized, rows):
+    """One metadata row per sample, indexed identically to area/nominal pivots."""
+    cols = ["Sample Key", "Sample Name", "Name", "ID", "Sample Text", "Type"]
+    x = normalized.loc[rows, [c for c in cols if c in normalized.columns]].copy()
+    for c in cols:
+        if c not in x.columns:
+            x[c] = ""
+    return (
+        x[cols].drop_duplicates(["Sample Key", "Sample Name"])
+        .set_index(["Sample Key", "Sample Name"])
+    )
 
 
 def _pivot(normalized, rows):
@@ -366,6 +401,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
 
     cal_area = _pivot(data, cal_rows); qc_area = _pivot(data, qc_rows)
     cal_nom = _analyte_nominals(data, cal_rows); qc_nom = _analyte_nominals(data, qc_rows)
+    qc_meta = _sample_metadata(data, qc_rows)
     analytes = [c for c in cal_nom.columns if c in cal_area.columns]
     is_names = sorted(data.loc[data["Component Role"] == "IS", "Component"].astype(str).unique())
     if not analytes: raise ValueError("No analyte components with calibration concentrations were detected.")
@@ -459,7 +495,7 @@ def analyze_surrogate_is(normalized, criteria=None, component_mapping=None, qc_s
         "manual_exclusions": {},
         "_cache": {
             "cal_area": cal_area, "qc_area": qc_area,
-            "cal_nom": cal_nom, "qc_nom": qc_nom,
+            "cal_nom": cal_nom, "qc_nom": qc_nom, "qc_meta": qc_meta,
         },
     }
 
@@ -475,6 +511,7 @@ def compute_pair_detail(result, analyte, is_name):
     cache = result.get("_cache", {})
     cal_area = cache.get("cal_area"); qc_area = cache.get("qc_area")
     cal_nom = cache.get("cal_nom"); qc_nom = cache.get("qc_nom")
+    qc_meta = cache.get("qc_meta")
     if any(x is None for x in (cal_area, qc_area, cal_nom, qc_nom)):
         raise ValueError("Detailed pair cache is unavailable.")
 
@@ -511,13 +548,30 @@ def compute_pair_detail(result, analyte, is_name):
         qnom = qn[qvalid].to_numpy(float)
         qcalc = fit.invert(qratio)
         by_level, _ = _qc_summary(qcalc, qnom)
-        sample_detail = pd.DataFrame({
-            "Sample Key": [i[0] for i in qidx[qvalid]],
-            "Sample Name": [i[1] for i in qidx[qvalid]],
-            "Nominal": qnom,
-            "Ratio": qratio,
-            "Calculated": qcalc,
-        })
+        selected_index = qidx[qvalid]
+        if qc_meta is not None:
+            md = qc_meta.reindex(selected_index)
+            sample_detail = pd.DataFrame({
+                "Name": md["Name"].fillna("").astype(str).to_numpy(),
+                "ID": md["ID"].fillna("").astype(str).to_numpy(),
+                "Sample Text": md["Sample Text"].fillna("").astype(str).to_numpy(),
+                "Type": md["Type"].fillna("").astype(str).to_numpy(),
+                "Sample Key": [i[0] for i in selected_index],
+                "Nominal": qnom,
+                "Ratio": qratio,
+                "Calculated": qcalc,
+            })
+        else:
+            sample_detail = pd.DataFrame({
+                "Name": [i[1] for i in selected_index],
+                "ID": "",
+                "Sample Text": "",
+                "Type": "",
+                "Sample Key": [i[0] for i in selected_index],
+                "Nominal": qnom,
+                "Ratio": qratio,
+                "Calculated": qcalc,
+            })
         sample_detail["Bias %"] = (
             (sample_detail["Calculated"] - sample_detail["Nominal"])
             / sample_detail["Nominal"] * 100.0
@@ -629,6 +683,30 @@ def refit_pair_with_exclusions(result, analyte, is_name, excluded_nominals):
         for col, value in updates.items():
             result["ranking"].loc[mask, col] = value
     return compute_pair_detail(result, analyte, is_name)
+
+
+def sync_pair_amr_to_surrogates(result, analyte, source_is):
+    """Copy the selected pair's manual calibrator exclusions to all IS pairs for one analyte."""
+    key = (str(analyte), str(source_is))
+    exclusions = list(result.get("manual_exclusions", {}).get(key, []))
+    ranking = result.get("ranking", pd.DataFrame())
+    if ranking.empty:
+        return {"updated": 0, "failed": []}
+
+    targets = ranking.loc[
+        ranking["Analyte"].astype(str).eq(str(analyte)),
+        "Internal Standard",
+    ].astype(str).drop_duplicates().tolist()
+
+    updated = 0
+    failed = []
+    for is_name in targets:
+        try:
+            refit_pair_with_exclusions(result, analyte, is_name, exclusions)
+            updated += 1
+        except Exception as exc:
+            failed.append((is_name, str(exc)))
+    return {"updated": updated, "failed": failed, "exclusions": exclusions}
 
 
 def pair_metric_matrix(result, metric="QC Mean |Bias| %"):
