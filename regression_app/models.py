@@ -117,11 +117,20 @@ def _weights(x, mode, origin_include=False):
         raise ValueError(f"{mode} weighting requires non-zero X values to be positive.")
     if np.any(zero) and not origin_include:
         raise ValueError(f"{mode} weighting cannot be applied to an experimental X=0 row.")
-    w[zero] = 1.0
+
     if mode == "1/x":
         w[nonzero] = 1.0 / x[nonzero]
     else:
         w[nonzero] = 1.0 / (x[nonzero] ** 2)
+
+    if np.any(zero):
+        if not np.any(nonzero):
+            raise ValueError("Included origin requires at least one non-zero calibrator.")
+        # Match TargetLynx/QuanLynx Include Origin behavior: the synthetic
+        # (0,0) point receives the same weight as the lowest non-zero
+        # calibration standard.
+        lowest_weight = float(np.max(w[nonzero]))
+        w[zero] = lowest_weight
     return w
 
 
@@ -255,7 +264,7 @@ def fit_polynomial(x, y, degree=1, weight_mode="none", name=None,
         "Back-calculated X values are obtained by algebraically inverting the fitted equation.",
     ]
     if synthetic_origin and weight_mode != "none":
-        notes.append("For Include + reciprocal weighting, the synthetic (0,0) origin receives unit weight because 1/0 is undefined; non-zero calibrators receive the requested reciprocal weight.")
+        notes.append("For Include + reciprocal weighting, the synthetic (0,0) origin receives the same weight as the lowest non-zero calibration standard, matching TargetLynx/QuanLynx behavior.")
     return FitResult(name=name or ("Linear" if degree == 1 else "Quadratic"), params=coeff,
         predict=predict, invert=invert, yhat=yhat, residuals=y-yhat, backcalc_x=backcalc,
         bias_pct=bias, weights=w_original, stats=stats, pass_mask=pass_mask,
