@@ -20,6 +20,8 @@ from .surrogate_is import (
     export_surrogate_workbook,
 )
 from .ui_helpers import SortableTableItem, configure_sortable_table, make_table_filter_bar
+from .project_io import save_project, load_project
+from . import __version__
 
 
 def _fmt(v):
@@ -53,6 +55,7 @@ def install(MainWindow):
         self.sis_user_amr_path = None
         self.sis_updating_cal_table = False
         self.sis_rank_hidden_columns = set()
+        self.sis_project_path = None
         _build_tab(self)
     MainWindow.__init__ = wrapped_init
 
@@ -72,6 +75,10 @@ def _build_tab(w):
 
     row = QHBoxLayout(); btn = QPushButton("Open Surrogate IS Dataset")
     btn.clicked.connect(lambda: _load(w)); row.addWidget(btn)
+    open_project = QPushButton("Open Project")
+    open_project.clicked.connect(lambda: _open_surrogate_project(w)); row.addWidget(open_project)
+    save_project_btn = QPushButton("Save Project")
+    save_project_btn.clicked.connect(lambda: _save_surrogate_project(w)); row.addWidget(save_project_btn)
     w.sis_file = QLabel("No file loaded"); w.sis_file.setWordWrap(True); row.addWidget(w.sis_file, 1)
     root.addLayout(row)
 
@@ -313,6 +320,230 @@ def _build_tab(w):
     export.clicked.connect(lambda: _export(w)); er.addWidget(export); er.addStretch(); root.addLayout(er)
     insert = next((i for i in range(tabs.count()) if tabs.tabText(i) == "AMR Validation"), tabs.count())
     tabs.insertTab(insert, page, "Surrogate IS Analysis")
+
+
+def _ranking_column_order(w):
+    table = w.sis_ranking
+    header = table.horizontalHeader()
+    order = []
+    for visual in range(header.count()):
+        logical = header.logicalIndex(visual)
+        item = table.horizontalHeaderItem(logical)
+        if item is not None:
+            order.append(item.text())
+    return order
+
+
+def _json_scalar(value):
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def _save_surrogate_project(w):
+    if w.sis_data is None:
+        QMessageBox.information(w, "No dataset", "Load a surrogate-IS dataset before saving a project.")
+        return
+
+    default_name = "surrogate_is_project.regproj"
+    if w.sis_project_path:
+        default_name = str(w.sis_project_path)
+    path, _ = QFileDialog.getSaveFileName(
+        w, "Save Regression App Project", default_name,
+        "Regression App Project (*.regproj)"
+    )
+    if not path:
+        return
+
+    try:
+        mapping = _mapping_from_ui(w)
+        qc_mapping = _qc_mapping_from_ui(w)
+        selected = _selected_pair(w)
+
+        exclusions = []
+        if w.sis_result:
+            for (analyte, is_name), values in w.sis_result.get("manual_exclusions", {}).items():
+                exclusions.append({
+                    "analyte": str(analyte),
+                    "internal_standard": str(is_name),
+                    "excluded_nominals": [float(v) for v in values],
+                })
+
+        filter_col = w.sis_rank_filter_column.currentText() if hasattr(w, "sis_rank_filter_column") else ""
+        filter_value = w.sis_rank_filter_value.currentText() if hasattr(w, "sis_rank_filter_value") else "All"
+
+        state = {
+            "workspace": "Surrogate IS Analysis",
+            "source_path": str(w.sis_path or ""),
+            "analysis_was_run": bool(w.sis_result is not None),
+            "criteria": {
+                "model_name": w.sis_model.currentText(),
+                "min_calibrators": int(w.sis_min_cal.value()),
+                "max_calibrator_bias": float(w.sis_cal_bias.value()),
+                "min_r2": float(w.sis_r2.value()),
+                "max_qc_mean_abs_bias": float(w.sis_qc_mean_bias.value()),
+                "max_qc_abs_bias": float(w.sis_qc_max_bias.value()),
+                "max_qc_cv": float(w.sis_qc_cv.value()),
+                "qc_reference_basis": w.sis_qc_reference.currentText(),
+            },
+            "calibrator_source": w.sis_calibrator_source.currentText(),
+            "manual_exclusions": exclusions,
+            "ranking": {
+                "filter_column": filter_col,
+                "filter_value": filter_value,
+                "hidden_columns": sorted(str(c) for c in w.sis_rank_hidden_columns),
+                "column_order": _ranking_column_order(w),
+                "selected_pair": list(selected) if selected else None,
+            },
+            "heatmap": {
+                "metric": w.sis_heat_metric.currentText(),
+                "annotate": bool(w.sis_heat_annotate.isChecked()),
+            },
+        }
+
+        saved = save_project(
+            path,
+            app_version=__version__,
+            module="surrogate_is",
+            state=state,
+            tables={
+                "normalized_data": w.sis_data,
+                "component_mapping": mapping,
+                "qc_mapping": qc_mapping,
+                "user_amr": w.sis_user_amr,
+            },
+        )
+        w.sis_project_path = saved
+        QMessageBox.information(w, "Project saved", f"Saved:\n{saved}")
+    except Exception as exc:
+        QMessageBox.critical(w, "Project save failed", str(exc))
+
+
+def _restore_combo_text(combo, text):
+    idx = combo.findText(str(text))
+    if idx >= 0:
+        combo.setCurrentIndex(idx)
+
+
+def _restore_ranking_layout(w, state):
+    ranking_state = state.get("ranking", {})
+    w.sis_rank_hidden_columns = set(str(c) for c in ranking_state.get("hidden_columns", []))
+
+    col = ranking_state.get("filter_column", "")
+    if col:
+        _restore_combo_text(w.sis_rank_filter_column, col)
+        _update_ranking_filter_values(w)
+        value = ranking_state.get("filter_value", "All")
+        _restore_combo_text(w.sis_rank_filter_value, value)
+        _refresh_ranking_view(w)
+
+    desired = [str(c) for c in ranking_state.get("column_order", [])]
+    header = w.sis_ranking.horizontalHeader()
+    for target_visual, name in enumerate(desired):
+        logical = next(
+            (c for c in range(w.sis_ranking.columnCount())
+             if w.sis_ranking.horizontalHeaderItem(c) is not None
+             and w.sis_ranking.horizontalHeaderItem(c).text() == name),
+            None,
+        )
+        if logical is not None:
+            current_visual = header.visualIndex(logical)
+            if current_visual != target_visual:
+                header.moveSection(current_visual, target_visual)
+    _apply_ranking_column_visibility(w)
+
+    pair = ranking_state.get("selected_pair")
+    if pair and len(pair) == 2:
+        _refresh_ranking_view(w, preferred_pair=(str(pair[0]), str(pair[1])))
+
+
+def _open_surrogate_project(w):
+    path, _ = QFileDialog.getOpenFileName(
+        w, "Open Regression App Project", "",
+        "Regression App Project (*.regproj)"
+    )
+    if not path:
+        return
+
+    try:
+        project = load_project(path)
+        if project.get("module") != "surrogate_is":
+            raise ValueError(
+                f"This project belongs to module '{project.get('module', '')}', "
+                "not Surrogate IS Analysis."
+            )
+
+        state = project.get("state", {})
+        tables = project.get("tables", {})
+        data = tables.get("normalized_data")
+        if data is None or data.empty:
+            raise ValueError("The project does not contain its normalized surrogate-IS dataset.")
+
+        w.sis_data = data
+        w.sis_path = state.get("source_path") or None
+        w.sis_project_path = Path(path)
+        w.sis_component_mapping = tables.get("component_mapping")
+        if w.sis_component_mapping is None:
+            w.sis_component_mapping = component_mapping_table(data)
+        w.sis_qc_mapping = tables.get("qc_mapping")
+        if w.sis_qc_mapping is None:
+            w.sis_qc_mapping = qc_sample_mapping_table(data)
+        w.sis_user_amr = tables.get("user_amr")
+        w.sis_user_amr_path = None
+
+        _populate_mapping(w)
+        _populate_qc_mapping(w)
+        w.sis_file.setText(f"{Path(path).name} (project)")
+
+        criteria = state.get("criteria", {})
+        _restore_combo_text(w.sis_model, criteria.get("model_name", "Linear 1/x"))
+        if "min_calibrators" in criteria: w.sis_min_cal.setValue(int(criteria["min_calibrators"]))
+        if "max_calibrator_bias" in criteria: w.sis_cal_bias.setValue(float(criteria["max_calibrator_bias"]))
+        if "min_r2" in criteria: w.sis_r2.setValue(float(criteria["min_r2"]))
+        if "max_qc_mean_abs_bias" in criteria: w.sis_qc_mean_bias.setValue(float(criteria["max_qc_mean_abs_bias"]))
+        if "max_qc_abs_bias" in criteria: w.sis_qc_max_bias.setValue(float(criteria["max_qc_abs_bias"]))
+        if "max_qc_cv" in criteria: w.sis_qc_cv.setValue(float(criteria["max_qc_cv"]))
+        _restore_combo_text(
+            w.sis_qc_reference,
+            criteria.get("qc_reference_basis", "Nominal concentration"),
+        )
+        _restore_combo_text(w.sis_calibrator_source, state.get("calibrator_source", "Stage 1"))
+
+        heat = state.get("heatmap", {})
+        _restore_combo_text(w.sis_heat_metric, heat.get("metric", "Fit R2"))
+        w.sis_heat_annotate.setChecked(bool(heat.get("annotate", False)))
+
+        if w.sis_user_amr is not None and len(w.sis_user_amr):
+            w.sis_amr_status.setText(
+                f"Project user-defined AMR for {len(w.sis_user_amr)} analyte(s)"
+            )
+        else:
+            w.sis_amr_status.setText("Automatic Stage 1")
+
+        w.sis_result = None
+        if state.get("analysis_was_run", False):
+            _run(w, suppress_large_warning=True)
+            if w.sis_result is not None:
+                for rec in state.get("manual_exclusions", []):
+                    try:
+                        refit_pair_with_exclusions(
+                            w.sis_result,
+                            str(rec.get("analyte", "")),
+                            str(rec.get("internal_standard", "")),
+                            rec.get("excluded_nominals", []),
+                        )
+                    except Exception:
+                        pass
+                _refresh_ranking_view(w)
+                _draw_heatmap(w)
+                _restore_ranking_layout(w, state)
+
+        w.sis_note.setText(
+            f"Opened project {Path(path).name} created with Regression App "
+            f"{project.get('app_version', '')}. Embedded data and analysis settings restored."
+        )
+    except Exception as exc:
+        QMessageBox.critical(w, "Project open failed", str(exc))
 
 
 def _load_user_amr_file(w):
@@ -731,7 +962,7 @@ def _refresh_ranking_view(w, preferred_pair=None):
                     w.sis_ranking.selectRow(r)
                     break
 
-def _run(w):
+def _run(w, suppress_large_warning=False):
     if w.sis_data is None:
         QMessageBox.information(w, "No dataset", "Load a surrogate-IS dataset first."); return
     try:
@@ -747,7 +978,7 @@ def _run(w):
             )
             return
         pair_count = n_an * n_is
-        if pair_count > 2000:
+        if pair_count > 2000 and not suppress_large_warning:
             answer = QMessageBox.warning(
                 w,
                 "Large surrogate-IS benchmark",
