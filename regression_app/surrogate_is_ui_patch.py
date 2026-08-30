@@ -21,6 +21,7 @@ from .surrogate_is import (
 )
 from .ui_helpers import SortableTableItem, configure_sortable_table, make_table_filter_bar
 from .project_io import save_project, load_project
+from .models import ORIGIN_EXCLUDE, ORIGIN_INCLUDE, ORIGIN_FORCE
 from . import __version__
 
 
@@ -56,6 +57,7 @@ def install(MainWindow):
         self.sis_updating_cal_table = False
         self.sis_rank_hidden_columns = set()
         self.sis_project_path = None
+        self.sis_analyte_fit_settings = {}
         _build_tab(self)
     MainWindow.__init__ = wrapped_init
 
@@ -116,7 +118,17 @@ def _build_tab(w):
     g.addWidget(QLabel("Minimum calibrators"), 0, 2)
     w.sis_min_cal = QSpinBox(); w.sis_min_cal.setRange(3, 30); w.sis_min_cal.setValue(5)
     g.addWidget(w.sis_min_cal, 0, 3)
-    g.addWidget(QLabel("QC reference"), 0, 4)
+    g.addWidget(QLabel("Default origin handling"), 0, 4)
+    w.sis_origin = QComboBox()
+    w.sis_origin.addItems([ORIGIN_EXCLUDE, ORIGIN_INCLUDE, ORIGIN_FORCE])
+    w.sis_origin.setCurrentText(ORIGIN_EXCLUDE)
+    w.sis_origin.setToolTip(
+        "Global default for analytes unless overridden in Analyte Fit Settings. "
+        "Exclude estimates a free intercept without adding (0,0); Include adds a synthetic (0,0); "
+        "Force constrains the fitted curve through zero."
+    )
+    g.addWidget(w.sis_origin, 0, 5)
+    g.addWidget(QLabel("QC reference"), 1, 4)
     w.sis_qc_reference = QComboBox()
     w.sis_qc_reference.addItems([
         "Nominal concentration",
@@ -126,7 +138,7 @@ def _build_tab(w):
         "Choose whether QC bias is calculated against the assigned nominal concentration "
         "or against the concentration calculated using the analyte's matched SIL-IS curve."
     )
-    g.addWidget(w.sis_qc_reference, 0, 5)
+    g.addWidget(w.sis_qc_reference, 1, 5)
 
     specs = [
         ("Max cal |bias| %", "sis_cal_bias", 20.0), ("Minimum Fit R²", "sis_r2", 0.99),
@@ -142,7 +154,7 @@ def _build_tab(w):
         else:
             sp.setRange(0.0, 100.0); sp.setDecimals(2)
         sp.setValue(val); setattr(w, attr, sp); g.addWidget(sp, r, c + 1)
-    run = QPushButton("Run Surrogate IS Analysis"); run.clicked.connect(lambda: _run(w)); g.addWidget(run, 1, 4, 2, 2)
+    run = QPushButton("Run Surrogate IS Analysis"); run.clicked.connect(lambda: _run(w)); g.addWidget(run, 2, 4, 2, 2)
     root.addWidget(box)
 
     w.sis_note = QLabel(""); w.sis_note.setWordWrap(True); root.addWidget(w.sis_note)
@@ -179,6 +191,29 @@ def _build_tab(w):
     w.sis_mapping_table.horizontalHeader().setStretchLastSection(True)
     ml.addWidget(w.sis_mapping_table, 1)
     outtabs.addTab(mapping_page, "Component Mapping")
+
+    fit_page = QWidget(); afl = QVBoxLayout(fit_page)
+    fit_intro = QLabel(
+        "Override regression model and origin handling independently for each analyte. "
+        "Use Global Default to inherit the settings above; analyte-specific choices are applied "
+        "consistently to candidate-range fitting, iterative Stage 2, matched SIL-IS reference fits, "
+        "and manual pair refits."
+    )
+    fit_intro.setWordWrap(True); afl.addWidget(fit_intro)
+    fit_actions = QHBoxLayout()
+    reset_fit = QPushButton("Reset All to Global Defaults")
+    reset_fit.clicked.connect(lambda: _reset_analyte_fit_settings(w))
+    fit_actions.addWidget(reset_fit)
+    fit_actions.addStretch()
+    afl.addLayout(fit_actions)
+    w.sis_analyte_fit_table = QTableWidget(0, 3)
+    w.sis_analyte_fit_table.setHorizontalHeaderLabels([
+        "Analyte", "Regression Model", "Origin Handling"
+    ])
+    w.sis_analyte_fit_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+    w.sis_analyte_fit_table.horizontalHeader().setStretchLastSection(True)
+    afl.addWidget(w.sis_analyte_fit_table, 1)
+    outtabs.addTab(fit_page, "Analyte Fit Settings")
 
     qcmap_page = QWidget(); qml = QVBoxLayout(qcmap_page)
     qcmap_intro = QLabel(
@@ -357,6 +392,21 @@ def _save_surrogate_project(w):
 
     try:
         mapping = _mapping_from_ui(w)
+        current_analytes = sorted(
+            mapping.loc[
+                mapping["Include"].astype(bool) & mapping["Role"].astype(str).eq("Analyte"),
+                "Component",
+            ].astype(str).unique().tolist()
+        )
+        table_analytes = [
+            w.sis_analyte_fit_table.item(r, 0).text()
+            for r in range(w.sis_analyte_fit_table.rowCount())
+            if w.sis_analyte_fit_table.item(r, 0) is not None
+        ]
+        if current_analytes != table_analytes:
+            existing = _analyte_fit_settings_from_ui(w)
+            w.sis_analyte_fit_settings = existing
+            _populate_analyte_fit_settings(w)
         qc_mapping = _qc_mapping_from_ui(w)
         selected = _selected_pair(w)
 
@@ -385,7 +435,9 @@ def _save_surrogate_project(w):
                 "max_qc_abs_bias": float(w.sis_qc_max_bias.value()),
                 "max_qc_cv": float(w.sis_qc_cv.value()),
                 "qc_reference_basis": w.sis_qc_reference.currentText(),
+                "origin_mode": w.sis_origin.currentText(),
             },
+            "analyte_fit_settings": _analyte_fit_settings_from_ui(w),
             "calibrator_source": w.sis_calibrator_source.currentText(),
             "manual_exclusions": exclusions,
             "ranking": {
@@ -492,6 +544,7 @@ def _open_surrogate_project(w):
         w.sis_user_amr_path = None
 
         _populate_mapping(w)
+        _populate_analyte_fit_settings(w)
         _populate_qc_mapping(w)
         w.sis_file.setText(f"{Path(path).name} (project)")
 
@@ -507,6 +560,11 @@ def _open_surrogate_project(w):
             w.sis_qc_reference,
             criteria.get("qc_reference_basis", "Nominal concentration"),
         )
+        _restore_combo_text(w.sis_origin, criteria.get("origin_mode", ORIGIN_EXCLUDE))
+        w.sis_analyte_fit_settings = {
+            str(k): dict(v) for k, v in state.get("analyte_fit_settings", {}).items()
+        }
+        _populate_analyte_fit_settings(w)
         _restore_combo_text(w.sis_calibrator_source, state.get("calibrator_source", "Stage 1"))
 
         heat = state.get("heatmap", {})
@@ -571,12 +629,76 @@ def _clear_user_amr(w):
     w.sis_amr_status.setText("Automatic Stage 1")
 
 
+def _current_analytes_from_mapping(w):
+    mapping = _mapping_from_ui(w) if w.sis_mapping_table.rowCount() else w.sis_component_mapping
+    if mapping is None or len(mapping) == 0:
+        return []
+    x = mapping[
+        mapping["Include"].astype(bool)
+        & mapping["Role"].astype(str).eq("Analyte")
+    ]
+    return sorted(x["Component"].astype(str).unique().tolist())
+
+
+def _populate_analyte_fit_settings(w):
+    if not hasattr(w, "sis_analyte_fit_table"):
+        return
+    analytes = _current_analytes_from_mapping(w)
+    table = w.sis_analyte_fit_table
+    table.setRowCount(len(analytes))
+    for r, analyte in enumerate(analytes):
+        item = QTableWidgetItem(str(analyte))
+        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+        table.setItem(r, 0, item)
+
+        saved = w.sis_analyte_fit_settings.get(str(analyte), {})
+        model = QComboBox()
+        model.addItems(["Global Default", "Linear", "Linear 1/x", "Linear 1/x²"])
+        model.setCurrentText(str(saved.get("model_display", "Global Default")))
+        table.setCellWidget(r, 1, model)
+
+        origin = QComboBox()
+        origin.addItems(["Global Default", ORIGIN_EXCLUDE, ORIGIN_INCLUDE, ORIGIN_FORCE])
+        origin.setCurrentText(str(saved.get("origin_display", "Global Default")))
+        table.setCellWidget(r, 2, origin)
+    table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+    table.horizontalHeader().setStretchLastSection(True)
+
+
+def _analyte_fit_settings_from_ui(w):
+    settings = {}
+    table = w.sis_analyte_fit_table
+    for r in range(table.rowCount()):
+        item = table.item(r, 0)
+        if item is None:
+            continue
+        analyte = item.text()
+        model_widget = table.cellWidget(r, 1)
+        origin_widget = table.cellWidget(r, 2)
+        model_display = model_widget.currentText() if model_widget else "Global Default"
+        origin_display = origin_widget.currentText() if origin_widget else "Global Default"
+        settings[analyte] = {
+            "model_name": w.sis_model.currentText() if model_display == "Global Default" else model_display,
+            "origin_mode": w.sis_origin.currentText() if origin_display == "Global Default" else origin_display,
+            "model_display": model_display,
+            "origin_display": origin_display,
+        }
+    w.sis_analyte_fit_settings = settings
+    return settings
+
+
+def _reset_analyte_fit_settings(w):
+    w.sis_analyte_fit_settings = {}
+    _populate_analyte_fit_settings(w)
+
+
 def _criteria(w):
     return SurrogateCriteria(
         model_name=w.sis_model.currentText(), min_calibrators=w.sis_min_cal.value(),
         max_calibrator_bias=w.sis_cal_bias.value(), min_r2=w.sis_r2.value(),
         max_qc_mean_abs_bias=w.sis_qc_mean_bias.value(), max_qc_abs_bias=w.sis_qc_max_bias.value(),
         max_qc_cv=w.sis_qc_cv.value(), qc_reference_basis=w.sis_qc_reference.currentText(),
+        origin_mode=w.sis_origin.currentText(),
     )
 
 
@@ -993,7 +1115,8 @@ def _run(w, suppress_large_warning=False):
         w.sis_result = analyze_surrogate_is(
             w.sis_data, _criteria(w), component_mapping=mapping,
             qc_sample_mapping=qc_mapping, user_amr=w.sis_user_amr,
-            calibrator_source_mode=w.sis_calibrator_source.currentText()
+            calibrator_source_mode=w.sis_calibrator_source.currentText(),
+            analyte_fit_settings=_analyte_fit_settings_from_ui(w)
         ); rank = w.sis_result["ranking"]
         w.sis_rank_filter_column.blockSignals(True)
         w.sis_rank_filter_column.clear()
