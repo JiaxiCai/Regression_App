@@ -3,7 +3,7 @@ set -u
 cd "$(dirname "$0")"
 
 echo "=========================================="
-echo " Regression App v0.5.33 - macOS Builder"
+echo " Regression App v0.5.34 - macOS Builder"
 echo "=========================================="
 echo
 
@@ -20,7 +20,7 @@ is_supported_python() {
     [ -x "$P" ] || return 1
     [[ "$P" == "/usr/bin/python3" ]] && return 1
     [[ "$P" == *"/Xcode.app/"* ]] && return 1
-    "$P" -c 'import sys; raise SystemExit(0 if (3,10) <= sys.version_info[:2] <= (3,14) else 1)' >/dev/null 2>&1
+    "$P" -c 'import sys; raise SystemExit(0 if (3,11) <= sys.version_info[:2] <= (3,15) else 1)' >/dev/null 2>&1
 }
 
 [ -f main.py ] || fail "main.py is missing."
@@ -28,14 +28,14 @@ is_supported_python() {
 [ -f tools/reconstruct_app.py ] || fail "tools/reconstruct_app.py is missing."
 
 PYTHON=""
-for CANDIDATE in python3.14 python3.13 python3.12 python3.11 python3.10 python3; do
+for CANDIDATE in python3.15 python3.14 python3.13 python3.12 python3.11 python3; do
     FOUND="$(command -v "$CANDIDATE" 2>/dev/null || true)"
     if [ -n "$FOUND" ] && is_supported_python "$FOUND"; then
         PYTHON="$FOUND"
         break
     fi
 done
-[ -n "$PYTHON" ] || fail "Python 3.10–3.14 was not found."
+[ -n "$PYTHON" ] || fail "Python 3.11–3.15 was not found."
 
 SELECTED_PY="$("$PYTHON" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 echo "Using Python $SELECTED_PY."
@@ -129,7 +129,7 @@ echo "[4/5] Creating ZIP..."
 rm -f RegressionApp-macOS.zip
 ditto -c -k --sequesterRsrc --keepParent dist/RegressionApp.app RegressionApp-macOS.zip || fail "Could not create ZIP."
 
-OUTPUT_DIR="$HOME/Desktop/RegressionApp-v0.5.33"
+OUTPUT_DIR="$HOME/Desktop/RegressionApp-v0.5.34"
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 cp -R dist/RegressionApp.app "$OUTPUT_DIR/"
@@ -137,4 +137,4 @@ cp RegressionApp-macOS.zip "$OUTPUT_DIR/"
 
 echo "[5/5] Finished."
 open "$OUTPUT_DIR"
-osascript -e 'display dialog "Regression App v0.5.33 built successfully and passed its packaged self-test." buttons {"OK"} default button "OK"'
+osascript -e 'display dialog "Regression App v0.5.34 built successfully and passed its packaged self-test." buttons {"OK"} default button "OK"'
