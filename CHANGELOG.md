@@ -2,6 +2,15 @@
 
 All notable development changes to Regression App are documented here.
 
+## [0.5.34] - 2026-11-23
+
+### Python 3.15 compatibility
+- Added Python 3.15 support to the Windows and macOS local builders and made Python 3.15 the preferred interpreter.
+- GitHub Actions desktop builds now run on Python 3.15.
+- Raised the NumPy minimum to 2.5.2 and SciPy minimum to 1.18.1, the first releases in the current dependency line with Python 3.15 wheel support.
+- Raised the PyInstaller minimum to 6.22.3 to include the latest Python 3.15 packaging fixes, including Windows Python 3.15 DLL collection fixes.
+- Local source builds now support Python 3.11–3.15.
+
 ## [0.5.33] - 2026-08-30
 
 ### Updated default surrogate acceptance criteria
