@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ==========================================
-echo  Regression App v0.5.33 - Windows Builder
+echo  Regression App v0.5.34 - Windows Builder
 echo ==========================================
 echo.
 
@@ -21,15 +21,16 @@ if not exist "tools\reconstruct_app.py" (
 )
 
 set "PYTHON_CMD="
-py -3.14 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.14"
+py -3.15 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.15"
+if not defined PYTHON_CMD py -3.14 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.14"
 if not defined PYTHON_CMD py -3.13 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.13"
 if not defined PYTHON_CMD py -3.12 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.12"
 if not defined PYTHON_CMD py -3.11 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.11"
 if not defined PYTHON_CMD py -3.10 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.10"
-if not defined PYTHON_CMD python -c "import sys; raise SystemExit(0 if (3,10) <= sys.version_info[:2] <= (3,14) else 1)" >nul 2>nul && set "PYTHON_CMD=python"
+if not defined PYTHON_CMD python -c "import sys; raise SystemExit(0 if (3,11) <= sys.version_info[:2] <= (3,15) else 1)" >nul 2>nul && set "PYTHON_CMD=python"
 
 if not defined PYTHON_CMD (
-    echo ERROR: Python 3.10 through 3.14 was not found.
+    echo ERROR: Python 3.11 through 3.15 was not found.
     echo Install a current 64-bit Python release from python.org.
     pause
     exit /b 1
@@ -119,7 +120,7 @@ if exist "!DIST_DIR!" (
     )
 )
 if exist "!DIST_DIR!" (
-    set "DIST_DIR=dist-v0.5.33-!RANDOM!"
+    set "DIST_DIR=dist-v0.5.34-!RANDOM!"
     echo Previous dist folder is still locked; using !DIST_DIR! instead.
 )
 
@@ -159,7 +160,7 @@ if errorlevel 1 (
 
 echo [4/5] Creating collaborator-ready ZIP...
 > "!DIST_DIR!\README-WINDOWS.txt" (
-    echo Regression App v0.5.33 - Windows
+    echo Regression App v0.5.34 - Windows
     echo.
     echo 1. Extract RegressionApp-Windows.zip completely.
     echo 2. Open the extracted RegressionApp folder.
