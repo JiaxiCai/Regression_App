@@ -26,7 +26,6 @@ if not defined PYTHON_CMD py -3.14 -c "import sys" >nul 2>nul && set "PYTHON_CMD
 if not defined PYTHON_CMD py -3.13 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.13"
 if not defined PYTHON_CMD py -3.12 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.12"
 if not defined PYTHON_CMD py -3.11 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.11"
-if not defined PYTHON_CMD py -3.10 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.10"
 if not defined PYTHON_CMD python -c "import sys; raise SystemExit(0 if (3,11) <= sys.version_info[:2] <= (3,15) else 1)" >nul 2>nul && set "PYTHON_CMD=python"
 
 if not defined PYTHON_CMD (

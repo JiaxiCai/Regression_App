@@ -11,6 +11,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  source-compatibility:
+    name: Source compatibility (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Reconstruct verified direct application source
+        run: python tools/reconstruct_app.py
+
+      - name: Install runtime dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Run source self-test
+        run: python main.py --self-test
+
   build:
     strategy:
       fail-fast: false
