@@ -1,4 +1,4 @@
-# Regression App v0.5.33
+# Regression App v0.5.34
 
 A cross-platform PySide6 desktop workbench for analytical and clinical laboratory data analysis, with emphasis on calibration, method validation, LC-MS/MS workflows, and transparent statistical reporting.
 
@@ -164,7 +164,7 @@ These labels describe the statistical weight applied to squared residuals. NumPy
 - Windows: `Build Regression App - Windows.bat`
 - GitHub Actions: `.github/workflows/build-desktop.yml`
 
-Current desktop builds use Python 3.14. Local builders support Python 3.10–3.14, prefer Python 3.14 when available, cache reusable build state, and invalidate PyInstaller analysis when the application version changes.
+Current desktop builds use Python 3.15. Local builders support Python 3.11–3.15, prefer Python 3.15 when available, cache reusable build state, and invalidate PyInstaller analysis when the application version changes.
 
 The repository uses build-time reconstruction of the verified direct `regression_app/app.py` source. Packaged applications do not depend on the historical runtime Base64/zlib loader.
 
