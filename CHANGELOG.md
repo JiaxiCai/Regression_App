@@ -9,7 +9,9 @@ All notable development changes to Regression App are documented here.
 - GitHub Actions desktop builds now run on Python 3.15.
 - Raised the NumPy minimum to 2.5.2 and SciPy minimum to 1.18.1, the first releases in the current dependency line with Python 3.15 wheel support.
 - Raised the PyInstaller minimum to 6.22.3 to include the latest Python 3.15 packaging fixes, including Windows Python 3.15 DLL collection fixes.
-- Local source builds now support Python 3.11–3.15.
+- Expanded the PySide6 range through 6.12.x so Python 3.15 can install a supported Qt binding while retaining compatibility with Python 3.11–3.14.
+- Local source builds now support Python 3.11–3.15; the Windows builder no longer falls back to Python 3.10.
+- Added a GitHub Actions source-compatibility matrix covering Python 3.11, 3.12, 3.13, 3.14, and 3.15.
 
 ## [0.5.33] - 2026-08-30
 
